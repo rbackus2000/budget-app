@@ -574,6 +574,13 @@
   .payday-row.pd-extra { color: var(--green); font-weight: 600; }
   .payday-row.pd-spend { color: var(--text-dim); }
   .payday-row.pd-short { color: var(--red); font-weight: 600; }
+  .payday-start {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 10px 16px; margin-bottom: 14px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    font-size: .85rem; color: var(--text-dim);
+  }
+  .payday-start .ps-amt { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .plan-cell .plan-line { white-space: nowrap; font-size: .82rem; }
   .plan-cell .plan-line.extra { color: var(--green); font-weight: 600; }
   .plan-cell .plan-line .pl-date { color: var(--text-dim); }
@@ -1332,24 +1339,35 @@ function buildPaydayPlan() {
   const remaining = {};
   debts.forEach(d => { remaining[d.id] = currentBalance(d); });
 
+  // Thread a running checking-account balance through the month, seeded with
+  // the current bank balance. Each paycheck posts to it and bills draw it down,
+  // so cash on hand and surplus from earlier checks cover a lean paycheck — a
+  // window is only "short" if the running balance actually goes below zero.
+  let runBal = num(state.bank);
   windows.forEach(w => {
     w.bills.sort((a, b) => a.day - b.day);
     w.minTotal = w.bills.reduce((s, x) => s + x.amount, 0);
     // Scheduled minimums also chip debt balances down as the month plays out.
     w.bills.forEach(x => { if (remaining[x.bill.id] != null) remaining[x.bill.id] = Math.max(0, remaining[x.bill.id] - x.amount); });
 
-    const surplus = w.amount - w.minTotal;
-    w.shortfall = surplus < 0 ? -surplus : 0;
-    let extra = Math.max(0, Math.min(w.amount * savingsPct, surplus));
+    w.startBalance = runBal;
+    runBal += w.amount;        // paycheck posts to the bank
+    runBal -= w.minTotal;      // this window's bills clear
+    w.afterBills = runBal;
+    w.shortfall = runBal < 0 ? -runBal : 0;
+
+    // Earmark the plan's savings/debt share for an extra payment, but never pay
+    // out more cash than is actually on hand (keep the running balance ≥ 0).
+    let extra = Math.max(0, Math.min(w.amount * savingsPct, runBal));
     for (let i = 0; i < debts.length && extra > 0.005; i++) {
       const d = debts[i];
       if (remaining[d.id] <= 0.005) continue; // paid off — roll extra to the next debt
       const amt = Math.min(extra, remaining[d.id]);
       w.extras.push({ bill: d, amount: amt });
-      remaining[d.id] -= amt; extra -= amt;
+      remaining[d.id] -= amt; extra -= amt; runBal -= amt;
     }
     w.extraTotal = w.extras.reduce((s, x) => s + x.amount, 0);
-    w.spendLeft = Math.max(0, surplus - w.extraTotal);
+    w.endBalance = runBal;     // carries forward to the next check
   });
 
   const totalExtra = windows.reduce((s, w) => s + w.extraTotal, 0);
@@ -1904,8 +1922,13 @@ function renderPaydayPlan() {
     return;
   }
 
-  // Headline: total extra to debt + how much sooner the target debt dies.
-  if (plan.totalExtra > 0) {
+  // Headline. A true shortfall (running balance dips below $0) takes priority;
+  // otherwise report extra-to-debt progress, or simply that bills are covered.
+  const short = plan.windows.some(w => w.shortfall > 0);
+  if (short) {
+    banner.className = "summary-banner over";
+    banner.textContent = "Heads up — your running balance dips below $0 on a flagged check. Top up your bank balance or trim a bill.";
+  } else if (plan.totalExtra > 0) {
     let msg = "This month's plan sends " + fmt(plan.totalExtra) + " extra to debt.";
     if (plan.boost) {
       msg += " " + plan.boost.name + " gone in ~" + plan.boost.fast + " months instead of " +
@@ -1914,12 +1937,15 @@ function renderPaydayPlan() {
     banner.className = "summary-banner under";
     banner.textContent = msg;
   } else {
-    const short = plan.windows.some(w => w.shortfall > 0);
-    banner.className = "summary-banner" + (short ? " over" : "");
-    banner.textContent = short
-      ? "Some paychecks don't cover the bills due in their window — see the flags below."
-      : "Bills are covered, but there's no surplus for extra debt payments this month.";
+    banner.className = "summary-banner";
+    banner.textContent = "Bills are covered from your balance and paychecks — no surplus for extra debt payments this month.";
   }
+
+  // Make it explicit that the plan starts from money already in the bank.
+  wrap.appendChild(el("div", { class: "payday-start" }, [
+    el("span", { text: "Starting bank balance" }),
+    el("span", { class: "ps-amt", text: fmt(num(state.bank)) }),
+  ]));
 
   plan.windows.forEach(w => {
     const block = el("div", { class: "payday-block" });
@@ -1954,13 +1980,13 @@ function renderPaydayPlan() {
 
     if (w.shortfall > 0) {
       block.appendChild(el("div", { class: "payday-row pd-short" }, [
-        el("span", { text: "Short — this check doesn't cover its bills" }),
+        el("span", { text: "Short — balance runs out even with cash on hand" }),
         el("span", { text: "−" + fmt(w.shortfall) }),
       ]));
     } else {
       block.appendChild(el("div", { class: "payday-row pd-spend" }, [
-        el("span", { text: "Left for everyday spending" }),
-        el("span", { text: fmt(w.spendLeft) }),
+        el("span", { text: "Balance after — carries to next check" }),
+        el("span", { text: fmt(w.endBalance) }),
       ]));
     }
 
