@@ -602,6 +602,9 @@
   .pd-push:hover { border-color: var(--accent); color: var(--accent); }
   .payday-row.pd-spend { color: var(--text-dim); }
   .payday-row.pd-short { color: var(--red); font-weight: 600; }
+  .payday-row.pd-carry { color: var(--text-dim); font-size: .82rem; }
+  .payday-row.pd-avail { color: var(--text); font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  .payday-row.pd-avail span:last-child { font-variant-numeric: tabular-nums; }
   .payday-start {
     display: flex; justify-content: space-between; align-items: baseline;
     padding: 10px 16px; margin-bottom: 14px;
@@ -2477,7 +2480,7 @@ function renderPaydayPlan() {
     "Your next paychecks from today (" + dateShort(todayMidnight()).replace(/^\w+, /, "") + ") through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". Tick a bill once you've paid it and the plan updates." }));
 
   let lastMonthShown = "";
-  plan.windows.forEach(w => {
+  plan.windows.forEach((w, wi) => {
     // Month divider so the rolling, cross-month plan stays readable.
     const mLabel = w.date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     if (mLabel !== lastMonthShown) { lastMonthShown = mLabel; wrap.appendChild(el("div", { class: "payday-month", text: mLabel })); }
@@ -2486,7 +2489,18 @@ function renderPaydayPlan() {
     block.appendChild(el("div", { class: "payday-head" }, [
       el("span", { class: "pd-date", text: dateShort(w.date) }),
       el("span", { class: "pd-src", text: w.sources.join(" + ") }),
-      el("span", { class: "pd-amt", text: fmt(w.amount) }),
+      el("span", { class: "pd-amt", text: "+ " + fmt(w.amount) }),
+    ]));
+
+    // Show the balance carried in from the previous check (first window starts
+    // from the bank balance shown above), then this check adds to it.
+    block.appendChild(el("div", { class: "payday-row pd-carry" }, [
+      el("span", { text: wi === 0 ? "Balance going in (from bank)" : "Carried over from last check" }),
+      el("span", { text: fmt(w.startBalance) }),
+    ]));
+    block.appendChild(el("div", { class: "payday-row pd-avail" }, [
+      el("span", { text: "Available this check (carried + paycheck)" }),
+      el("span", { text: fmt(w.startBalance + w.amount) }),
     ]));
 
     if (!w.bills.length) {
