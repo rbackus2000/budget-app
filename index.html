@@ -146,7 +146,12 @@
   .earner-head span { font-size: .72rem; color: var(--text-dim); font-weight: 600; }
   .earner-row { margin-bottom: 8px; }
   input[type="date"] { color-scheme: dark; }
-  .commission-field { margin-top: 16px; max-width: 420px; }
+  .commission-field { margin-top: 16px; max-width: 460px; }
+  .commission-split { margin-top: 14px; }
+  .commission-split .cs-label { font-size: .82rem; color: var(--text-dim); margin-bottom: 8px; }
+  .commission-split .cs-label b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .commission-split input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+  .commission-split .cs-hint { font-size: .72rem; color: var(--text-dim); margin-top: 7px; line-height: 1.45; }
   .month-nav {
     display: flex; align-items: center; gap: 12px;
     margin-top: 20px; flex-wrap: wrap;
@@ -975,6 +980,11 @@
     <div class="commission-field">
       <label for="commission">Commission — added to the last paycheck of the month</label>
       <div class="money-input"><input type="number" id="commission" min="0" step="any" placeholder="0.00" /></div>
+      <div class="commission-split" id="commissionSplit">
+        <div class="cs-label">Of your commission: <b id="commSaveLbl">75%</b> to debt &amp; goals · <b id="commFunLbl">25%</b> fun</div>
+        <input type="range" id="commFunRange" min="0" max="100" step="5" value="25" />
+        <div class="cs-hint">A commission is a windfall — bills are already covered, so most of it goes to your debt plan / goals, with a little kept for fun.</div>
+      </div>
     </div>
 
     <div class="total-income income-total">
@@ -1284,6 +1294,7 @@ let state = {
   emergencySaved: "", // current emergency-fund balance
   emergencyMonths: 3, // emergency fund target = this many months of living expenses
   emergencyDate: "",  // optional target date to fully fund the emergency fund
+  commissionFunPct: 25, // % of commission kept as fun; the rest follows the debt-then-goals plan
 };
 
 function newEarner() {
@@ -1308,7 +1319,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "" };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 25 };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1334,6 +1345,7 @@ function normalizeState() {
   if (typeof state.emergencySaved !== "string") state.emergencySaved = state.emergencySaved == null ? "" : String(state.emergencySaved);
   if (!(num(state.emergencyMonths) > 0)) state.emergencyMonths = 3;
   if (typeof state.emergencyDate !== "string") state.emergencyDate = "";
+  { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 25; }
 }
 
 function save() {
@@ -1630,12 +1642,13 @@ function buildPaydayPlan() {
   const checks = buildSchedule().filter(c => c.date >= cutoff);
   if (!checks.length) return null;
 
-  // Same-day checks (incl. commission) pool into one payday window.
+  // Same-day checks (incl. commission) pool into one payday window. Track the
+  // commission portion separately so windfalls can use a different split.
   const windows = [];
   checks.forEach(c => {
     const last = windows[windows.length - 1];
-    if (last && last.date.getTime() === c.date.getTime()) { last.amount += c.amount; last.sources.push(c.label); }
-    else windows.push({ date: c.date, amount: c.amount, sources: [c.label], bills: [], extras: [] });
+    if (last && last.date.getTime() === c.date.getTime()) { last.amount += c.amount; last.sources.push(c.label); if (c.isCommission) last.commissionAmount += c.amount; }
+    else windows.push({ date: c.date, amount: c.amount, sources: [c.label], bills: [], extras: [], commissionAmount: c.isCommission ? c.amount : 0 });
   });
 
   // Each bill → concrete due event(s) this month. No due day = day 1.
@@ -1691,8 +1704,13 @@ function buildPaydayPlan() {
     runBal -= w.minTotal;      // this window's bills clear
     w.shortfall = runBal < 0 ? -runBal : 0;
 
-    w.savingsEarmark = w.amount * savingsPct;     // the plan's savings/debt slice
-    w.funEarmark = w.amount * pct.wants / 100;    // fun / weekly spending
+    // Regular pay splits by the plan %s; the commission (a windfall) skips the
+    // needs cut and leans to save (debt then goals) with a smaller fun reward.
+    const commAmt = w.commissionAmount || 0;
+    const regAmt = Math.max(0, w.amount - commAmt);
+    const commFun = (num(state.commissionFunPct) >= 0 ? num(state.commissionFunPct) : 25) / 100;
+    w.savingsEarmark = regAmt * savingsPct + commAmt * (1 - commFun);  // savings/debt slice
+    w.funEarmark = regAmt * (pct.wants / 100) + commAmt * commFun;     // fun / weekly spending
 
     // Debt plan: route the savings slice to the priority debt, but never spend
     // more cash than is on hand (keep the running balance ≥ 0).
@@ -1744,6 +1762,10 @@ function planByBill(plan) {
 function renderIncome() {
   document.getElementById("commission").value = state.commission;
   document.getElementById("bank").value = state.bank;
+  const fun = num(state.commissionFunPct);
+  document.getElementById("commFunRange").value = state.commissionFunPct;
+  document.getElementById("commFunLbl").textContent = Math.round(fun) + "%";
+  document.getElementById("commSaveLbl").textContent = Math.round(100 - fun) + "%";
 }
 
 function renderEarners() {
@@ -2788,7 +2810,7 @@ function buildSnapshot() {
   return {
     today: todayISO,
     plan: { name: plan.name, bucketPercents: pct, categories: plan.categories.map(c => ({ name: c.name, pct: c.pct, bucket: c.bucket })) },
-    income: { thisMonth: +income.toFixed(2), startingBank: num(state.bank), currentCash: +currentCash().toFixed(2), projectedMonthEnd: +projectedEOM().toFixed(2) },
+    income: { thisMonth: +income.toFixed(2), startingBank: num(state.bank), currentCash: +currentCash().toFixed(2), projectedMonthEnd: +projectedEOM().toFixed(2), commission: num(state.commission), commissionSplit: "commission is a windfall — " + Math.round(100 - num(state.commissionFunPct)) + "% to debt/goals, " + Math.round(num(state.commissionFunPct)) + "% fun" },
     monthlyPayments: +payments.toFixed(2),
     leftover: +(income - payments).toFixed(2),
     payoffMethod: state.payoffMethod,
@@ -3380,6 +3402,12 @@ function init() {
   load(); // local cache for an instant first paint behind the gate
 
   document.getElementById("commission").addEventListener("input", e => { state.commission = e.target.value; recalcAll(); });
+  document.getElementById("commFunRange").addEventListener("input", e => {
+    state.commissionFunPct = parseFloat(e.target.value) || 0;
+    document.getElementById("commFunLbl").textContent = Math.round(state.commissionFunPct) + "%";
+    document.getElementById("commSaveLbl").textContent = Math.round(100 - state.commissionFunPct) + "%";
+    save(); renderPaydayPlan(); renderHome();
+  });
   document.getElementById("bank").addEventListener("input", e => { state.bank = e.target.value; save(); renderBank(); });
   document.getElementById("exportBtn").addEventListener("click", exportCSV);
   document.getElementById("prevMonth").addEventListener("click", () => shiftMonth(-1));
