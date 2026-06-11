@@ -571,8 +571,7 @@
   .payday-head .pd-amt { font-weight: 700; margin-left: auto; }
   .payday-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: .9rem; }
   .payday-row .pd-due { color: var(--text-dim); font-size: .76rem; margin-left: 8px; }
-  .debt-priority { margin-top: 4px; padding: 11px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; font-size: .84rem; color: var(--text-dim); }
-  .debt-priority b { color: var(--accent); }
+  .payday-row.pd-extra { color: var(--green); font-weight: 600; }
   .payday-row.pd-spend { color: var(--text-dim); }
   .payday-row.pd-short { color: var(--red); font-weight: 600; }
   .payday-start {
@@ -997,7 +996,7 @@
     </div>
     <div class="summary-banner" id="paydayBanner">Add paychecks and bills to build your payday plan.</div>
     <div id="paydayPlan"></div>
-    <div class="hint">Each paycheck covers the bills due before the next check arrives. The Savings and Fun amounts are what your budget plan earmarks from each check — you decide where they go: emergency fund, goals, extra debt payments, or weekly spending.</div>
+    <div class="hint">Each paycheck covers its bills first, then the Savings slice follows your debt plan — extra payments to your priority debt (avalanche or snowball). Whatever's left of Savings after debt is your goal money; once your debts are gone, the whole Savings slice flows to goals. Fun is yours to spend.</div>
   </section>
 
   <!-- GOALS & SAVINGS -->
@@ -1499,20 +1498,10 @@ function monthsToPayoff(balance, apr, payment) {
 }
 
 /* ----------------------- PAYDAY ALLOCATOR ------------------------- */
-// The debt to target first if you put extra money toward debt, per the
-// selected method (avalanche = highest APR, snowball = smallest balance).
-function priorityDebt() {
-  const debts = state.bills.filter(b => b.type !== "Bill" && currentBalance(b) > 0);
-  if (!debts.length) return null;
-  debts.sort((a, b) => state.payoffMethod === "snowball"
-    ? currentBalance(a) - currentBalance(b)
-    : (num(b.apr) - num(a.apr)) || (currentBalance(a) - currentBalance(b)));
-  return debts[0];
-}
-
-// Allocate the viewed month's paychecks: each check covers the bills due
-// before the next check arrives. The plan's Savings and Wants slices are
-// surfaced as per-check earmarks (guidance) rather than auto-spent.
+// Allocate the viewed month's paychecks: cover the bills due before the next
+// check, then follow the DEBT PLAN — the Savings slice goes to the priority
+// debt (avalanche = highest APR, snowball = smallest balance) as an extra
+// payment. Whatever Savings is left after debt is the leftover for goals.
 function buildPaydayPlan() {
   const { y, m } = viewYM();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
@@ -1555,30 +1544,70 @@ function buildPaydayPlan() {
   });
 
   const pct = planBucketPercents();
+  const savingsPct = pct.savings / 100;
+
+  // Debts (cards + loans carrying a balance), ranked by payoff method.
+  const debts = state.bills.filter(b => b.type !== "Bill" && currentBalance(b) > 0);
+  debts.sort((a, b) => state.payoffMethod === "snowball"
+    ? currentBalance(a) - currentBalance(b)
+    : (num(b.apr) - num(a.apr)) || (currentBalance(a) - currentBalance(b)));
+  const remaining = {};
+  debts.forEach(d => { remaining[d.id] = currentBalance(d); });
 
   // Thread a running checking-account balance through the month, seeded with
-  // the current bank balance. Each paycheck posts to it and bills draw it down,
-  // so cash on hand and surplus from earlier checks cover a lean paycheck — a
-  // window is only "short" if the running balance actually goes below zero.
-  // The Savings/Wants slices are NOT auto-spent — they're shown as guidance so
-  // you decide where they go (emergency fund, goals, extra debt, fun money).
+  // the current bank balance. Each paycheck posts to it and bills draw it down;
+  // a window is "short" only if the running balance goes below zero. The
+  // Savings slice follows the debt plan first (extra to the priority debt);
+  // whatever's left of it after debt is the leftover for goals.
   let runBal = num(state.bank);
   windows.forEach(w => {
     w.bills.sort((a, b) => a.day - b.day);
     w.minTotal = w.bills.reduce((s, x) => s + x.amount, 0);
-    w.extras = []; w.extraTotal = 0; // no auto debt routing — kept empty for planByBill
+    w.extras = [];
+    // Scheduled minimums also chip debt balances down as the month plays out.
+    w.bills.forEach(x => { if (remaining[x.bill.id] != null) remaining[x.bill.id] = Math.max(0, remaining[x.bill.id] - x.amount); });
 
     w.startBalance = runBal;
     runBal += w.amount;        // paycheck posts to the bank
     runBal -= w.minTotal;      // this window's bills clear
     w.shortfall = runBal < 0 ? -runBal : 0;
-    w.savingsEarmark = w.amount * pct.savings / 100; // suggested toward savings/goals/debt
-    w.funEarmark = w.amount * pct.wants / 100;        // suggested fun / weekly spending
+
+    w.savingsEarmark = w.amount * savingsPct;     // the plan's savings/debt slice
+    w.funEarmark = w.amount * pct.wants / 100;    // fun / weekly spending
+
+    // Debt plan: route the savings slice to the priority debt, but never spend
+    // more cash than is on hand (keep the running balance ≥ 0).
+    let pool = Math.max(0, Math.min(w.savingsEarmark, runBal));
+    let toDebt = 0;
+    for (let i = 0; i < debts.length && pool > 0.005; i++) {
+      const d = debts[i];
+      if (remaining[d.id] <= 0.005) continue; // paid off — roll to the next debt
+      const amt = Math.min(pool, remaining[d.id]);
+      w.extras.push({ bill: d, amount: amt });
+      remaining[d.id] -= amt; pool -= amt; toDebt += amt; runBal -= amt;
+    }
+    w.extraTotal = toDebt;
+    w.goalLeftover = Math.max(0, w.savingsEarmark - toDebt); // savings not needed for debt → goals
     w.endBalance = runBal;     // carries forward to the next check
   });
 
-  const totalSavings = windows.reduce((s, w) => s + w.savingsEarmark, 0);
-  return { windows, totalSavings };
+  const totalExtra = windows.reduce((s, w) => s + w.extraTotal, 0);
+  const totalGoalLeftover = windows.reduce((s, w) => s + w.goalLeftover, 0);
+
+  // Motivation line: how much sooner the priority debt dies with this extra.
+  let boost = null;
+  if (debts.length && totalExtra > 0) {
+    const t = debts[0];
+    const extraToTarget = windows.reduce((s, w) => s + w.extras.reduce((a, x) => a + (x.bill.id === t.id ? x.amount : 0), 0), 0);
+    if (extraToTarget > 0) {
+      const base = monthsToPayoff(currentBalance(t), t.apr, monthlyPayment(t));
+      const fast = monthsToPayoff(currentBalance(t), t.apr, monthlyPayment(t) + extraToTarget);
+      if (fast != null && isFinite(fast) && (base === Infinity || (base != null && fast < base)))
+        boost = { name: t.name || "your top debt", base, fast };
+    }
+  }
+
+  return { windows, totalExtra, totalGoalLeftover, boost };
 }
 
 // billId → planned payments [{ date, amount, kind: "min"|"extra", early }]
@@ -2177,15 +2206,26 @@ function renderPaydayPlan() {
     return;
   }
 
-  // Headline. A true shortfall (running balance dips below $0) takes priority;
-  // otherwise confirm bills are covered and point to the per-check earmarks.
+  // Headline. A shortfall (running balance dips below $0) takes priority;
+  // otherwise report the debt plan's extra payments and the goal leftover.
   const short = plan.windows.some(w => w.shortfall > 0);
   if (short) {
     banner.className = "summary-banner over";
     banner.textContent = "Heads up — your running balance dips below $0 on a flagged check. Top up your bank balance or trim a bill.";
   } else {
     banner.className = "summary-banner under";
-    banner.textContent = "Bills are covered. Your plan earmarks " + fmt(plan.totalSavings) + " for savings & goals this month — see each check below.";
+    let msg;
+    if (plan.totalExtra > 0) {
+      msg = "Debt plan: " + fmt(plan.totalExtra) + " extra to debt this month";
+      if (plan.boost) msg += " — " + plan.boost.name + " gone in ~" + plan.boost.fast + " mo instead of " + (plan.boost.base === Infinity ? "never" : "~" + plan.boost.base);
+      msg += ".";
+      if (plan.totalGoalLeftover > 0.5) msg += " " + fmt(plan.totalGoalLeftover) + " left over for goals.";
+    } else if (plan.totalGoalLeftover > 0.5) {
+      msg = "No debt to pay down — " + fmt(plan.totalGoalLeftover) + " is free for your goals this month.";
+    } else {
+      msg = "Bills are covered. Add a Savings % to your plan to fund debt and goals.";
+    }
+    banner.textContent = msg;
   }
 
   // Make it explicit that the plan starts from money already in the bank.
@@ -2246,6 +2286,14 @@ function renderPaydayPlan() {
       ]));
     });
 
+    // Debt plan: extra payments to the priority debt from this check.
+    w.extras.forEach(x => {
+      block.appendChild(el("div", { class: "payday-row pd-extra" }, [
+        el("span", { text: "Extra to " + (x.bill.name || "debt") + " ↑ (debt plan)" }),
+        el("span", { text: fmt(x.amount) }),
+      ]));
+    });
+
     if (w.shortfall > 0) {
       block.appendChild(el("div", { class: "payday-row pd-short" }, [
         el("span", { text: "Short — balance runs out even with cash on hand" }),
@@ -2258,27 +2306,15 @@ function renderPaydayPlan() {
       ]));
     }
 
-    // What your budget plan earmarks from THIS check (guidance, not auto-moved).
-    block.appendChild(el("div", { class: "payday-guide" }, [
-      el("span", { class: "pg-lbl", text: "From this check, set aside:" }),
-      el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.savingsEarmark) }), document.createTextNode(" savings & goals") ]),
-      el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.funEarmark) }), document.createTextNode(" fun / weekly spending") ]),
-    ]));
+    // From this check: debt plan, leftover toward goals, and fun money.
+    const guide = el("div", { class: "payday-guide" }, [ el("span", { class: "pg-lbl", text: "From this check:" }) ]);
+    if (w.extraTotal > 0) guide.appendChild(el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.extraTotal) }), document.createTextNode(" → debt plan") ]));
+    guide.appendChild(el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.goalLeftover) }), document.createTextNode(" → goals (leftover)") ]));
+    guide.appendChild(el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.funEarmark) }), document.createTextNode(" fun / spending") ]));
+    block.appendChild(guide);
 
     wrap.appendChild(block);
   });
-
-  // If they choose to put savings toward debt, point at the priority debt.
-  const pd = priorityDebt();
-  if (pd) {
-    wrap.appendChild(el("div", { class: "debt-priority" }, [
-      el("span", null, [
-        document.createTextNode("Putting savings toward debt? Target "),
-        el("b", { text: pd.name || "your priority debt" }),
-        document.createTextNode(" first (" + (state.payoffMethod === "snowball" ? "snowball — smallest balance" : "avalanche — highest APR") + ")."),
-      ]),
-    ]));
-  }
 }
 
 function setPayoffMethod(m) {
@@ -2316,11 +2352,11 @@ function goalPace(saved, target, dateStr) {
 function paceText(p, dateStr) {
   if (!p || p.none) return "";
   if (p.done) return "✓ Goal reached";
-  if (!p.hasDate) return "Set a target date to get a monthly savings pace";
+  if (!p.hasDate) return "Set an “achieve by” date to see the pace you'd need";
   const d = parseDate(dateStr);
   const by = d ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "";
   if (p.overdue) return "Target date passed — " + fmt(p.need) + " still needed";
-  return "Save " + fmt(p.monthly) + "/mo to reach this by " + by + " · " + p.months.toFixed(1) + " mo left";
+  return "Needs ~" + fmt(p.monthly) + "/mo to hit " + by + " · " + p.months.toFixed(1) + " mo left (funded from leftover)";
 }
 
 // Monthly dollars the budget plan earmarks for savings (income × savings %).
@@ -2331,22 +2367,33 @@ function renderGoals() {
   if (!list) return;
   clear(list);
 
-  // Headline: total monthly pace across dated goals vs. the plan's savings budget.
+  // Headline: goals are funded by what's LEFT OVER after the debt plan. While
+  // you carry debt, that leftover is small (savings is paying down debt); once
+  // debt clears, the full savings slice flows to goals.
   const summary = el("div", { class: "goal-summary" });
   function updateSummary() {
     let need = 0;
     const ef = goalPace(state.emergencySaved, emergencyTarget(), state.emergencyDate);
     if (ef.monthly) need += ef.monthly;
     state.goals.forEach(g => { const p = goalPace(g.saved, g.target, g.targetDate); if (p.monthly) need += p.monthly; });
-    const budget = monthlySavingsBudget();
+
+    const plan = buildPaydayPlan();
+    const leftover = plan ? plan.totalGoalLeftover : 0;
+    const hasDebt = state.bills.some(b => b.type !== "Bill" && currentBalance(b) > 0);
+
     if (need <= 0) {
       summary.className = "goal-summary";
-      summary.textContent = "Add a target date to a goal to see the monthly savings pace needed.";
+      summary.textContent = hasDebt
+        ? "Debt comes first: your Savings slice is paying down debt, so goals fund from whatever's left over. Add a target date to a goal to track the pace you'd need."
+        : "Add a target date to a goal to see whether your leftover covers it.";
+    } else if (hasDebt && leftover < 1) {
+      summary.className = "goal-summary";
+      summary.textContent = "Debt comes first — your Savings is going to debt payoff right now, so little is left for goals. Your dated goals would need " + fmt(need) + "/mo once debt clears.";
     } else {
-      const ok = budget >= need;
+      const ok = leftover >= need;
       summary.className = "goal-summary " + (ok ? "ok" : "short");
-      summary.textContent = "Your dated goals need " + fmt(need) + "/mo. Your plan earmarks ~" + fmt(budget) + "/mo for savings — " +
-        (ok ? "✓ on track, with " + fmt(budget - need) + "/mo to spare." : "⚠ short " + fmt(need - budget) + "/mo. Push a date out, raise income, or trim a goal.");
+      summary.textContent = "After the debt plan, ~" + fmt(leftover) + "/mo is left for goals. Your dated goals need " + fmt(need) + "/mo — " +
+        (ok ? "✓ on track, with " + fmt(leftover - need) + "/mo to spare." : "⚠ short " + fmt(need - leftover) + "/mo. Push a date out or pay debt down faster.");
     }
   }
   list.appendChild(summary);
@@ -2631,6 +2678,7 @@ function buildSnapshot() {
     emergencyFund: (function () { const p = goalPace(state.emergencySaved, emergencyTarget(), state.emergencyDate); return { saved: num(state.emergencySaved), targetMonths: num(state.emergencyMonths) || 3, target: +emergencyTarget().toFixed(2), monthsCovered: monthlyLivingExpenses() > 0 ? +(num(state.emergencySaved) / monthlyLivingExpenses()).toFixed(1) : null, achieveBy: state.emergencyDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; })(),
     goals: state.goals.map(g => { const p = goalPace(g.saved, g.target, g.targetDate); return { name: g.name, target: num(g.target), saved: num(g.saved), achieveBy: g.targetDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; }),
     monthlySavingsBudget: +monthlySavingsBudget().toFixed(2),
+    debtPlan: (function () { const pl = buildPaydayPlan(); return { fundingModel: "debt first, then leftover to goals", monthlyExtraToDebt: pl ? +pl.totalExtra.toFixed(2) : 0, monthlyLeftoverForGoals: pl ? +pl.totalGoalLeftover.toFixed(2) : 0 }; })(),
     overallUtilizationPct: overallUtilization() == null ? null : Math.round(overallUtilization() * 100),
     bills: state.bills.map(b => {
       const util = utilization(b);
