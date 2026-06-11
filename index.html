@@ -1154,7 +1154,7 @@
       <tbody id="compareBody"></tbody>
       <tfoot id="compareFoot"></tfoot>
     </table>
-    <div class="hint">Tag each bill's bucket above to control how it's counted here.</div>
+    <div class="hint">Actual reflects where your money goes: <b>Needs</b> = your bills, <b>Savings</b> = the slice going to debt payoff &amp; goals, <b>Wants</b> = your fun money. If your bills push the total over your income, you'll see "over plan." Tag each bill's bucket (on the Bills tab) to control how it's counted.</div>
   </section>
 
     </div><!-- /.views -->
@@ -2282,13 +2282,20 @@ function renderCompare() {
     catNames[c.bucket].push(c.name + " " + c.pct + "%");
   });
 
-  // Actual dollars per bucket from bills; track unassigned separately.
+  // Actual = where money actually goes. Bills count under their tagged bucket
+  // (Needs = rent, minimums, etc.). Then add the plan's real deployment of the
+  // rest of your income: the Savings slice → debt payoff + goals, the Wants
+  // slice → fun money. So all three buckets reflect actual allocation, not just
+  // bills. If bills push the total over your income, you'll read as "over plan".
   const actual = { needs: 0, wants: 0, savings: 0 };
   let unassigned = 0;
   state.bills.forEach(b => {
     if (Object.prototype.hasOwnProperty.call(actual, b.bucket)) actual[b.bucket] += monthlyPayment(b);
     else unassigned += monthlyPayment(b);
   });
+  const pcts = planBucketPercents();
+  actual.savings += income * pcts.savings / 100; // your savings slice → debt payoff + goals
+  actual.wants += income * pcts.wants / 100;     // your wants slice → fun money
 
   const body = document.getElementById("compareBody");
   clear(body);
