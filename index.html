@@ -1,0 +1,2417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Budget Planner</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --surface: #1a212b;
+    --surface-2: #222c38;
+    --border: #2c3947;
+    --text: #e6edf3;
+    --text-dim: #8b98a8;
+    --accent: #4f9cf9;
+    --accent-soft: #1e3a5f;
+    --green: #3fb950;
+    --green-soft: #102b18;
+    --red: #f85149;
+    --red-soft: #2d1416;
+    --shadow: 0 1px 3px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.2);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; }
+  .sub { color: var(--text-dim); font-size: .9rem; margin-top: 2px; }
+  header { margin-bottom: 24px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .btn-export {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 9px;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: all .15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .btn-export:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Account balance tallies */
+  .bank-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    align-items: end;
+  }
+  .tally {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 16px;
+  }
+  .tally .lbl { font-size: .7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+  .tally .val { font-size: 1.3rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tally.pos .val { color: var(--green); }
+  .tally.neg .val { color: var(--red); }
+  .tally .hint { font-size: .68rem; color: var(--text-dim); margin-top: 1px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow);
+  }
+  .card h2 {
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  /* Income */
+  .income-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 14px;
+    align-items: end;
+  }
+  label { display: block; font-size: .78rem; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+  .money-input { position: relative; }
+  .money-input::before {
+    content: "$";
+    position: absolute;
+    left: 12px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    pointer-events: none;
+    font-size: .95rem;
+  }
+  input[type="number"], input[type="text"], select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 11px 12px;
+    color: var(--text);
+    font-size: .95rem;
+    font-family: inherit;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .money-input input { padding-left: 26px; }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  input[type="number"]::-webkit-inner-spin-button { opacity: .3; }
+
+  .total-income {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 9px;
+    padding: 8px 16px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .total-income .lbl { font-size: .7rem; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+  .total-income .val { font-size: 1.35rem; font-weight: 700; }
+
+  /* Earner config + pay schedule */
+  .earner-head, .earner-row {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr auto;
+    gap: 10px;
+    align-items: center;
+  }
+  .earner-head { margin-bottom: 6px; padding: 0 2px; }
+  .earner-head span { font-size: .72rem; color: var(--text-dim); font-weight: 600; }
+  .earner-row { margin-bottom: 8px; }
+  input[type="date"] { color-scheme: dark; }
+  .commission-field { margin-top: 16px; max-width: 420px; }
+  .month-nav {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 20px; flex-wrap: wrap;
+  }
+  .navbtn {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+    font-size: 1.1rem; line-height: 1; font-family: inherit; transition: all .15s;
+  }
+  .navbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .month-label { font-weight: 700; font-size: 1rem; min-width: 150px; text-align: center; }
+  .month-nav .total-income { margin-left: auto; }
+  .pay-table { margin-top: 14px; }
+  .pay-table tbody tr { border-top: 1px solid var(--border); }
+  .pay-table td { padding: 9px 8px; }
+  .pay-table tfoot td { border-top: 2px solid var(--border); font-weight: 700; padding-top: 11px; }
+  .pay-table .src.comm { color: var(--green); font-weight: 700; }
+  .pay-table .num { font-variant-numeric: tabular-nums; }
+
+  /* Plan selector */
+  .plan-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .plan-btn {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 9px 16px;
+    border-radius: 999px;
+    font-size: .88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .plan-btn:hover { border-color: var(--accent); color: var(--text); }
+  .plan-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  /* Category breakdown */
+  .cat-list { display: grid; gap: 8px; margin-top: 16px; }
+  .cat-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 14px;
+    background: var(--surface-2);
+    border-radius: 9px;
+  }
+  .cat-row .name { font-weight: 600; font-size: .92rem; }
+  .cat-row .pct {
+    color: var(--text-dim);
+    font-size: .8rem;
+    background: var(--bg);
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .cat-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+
+  /* Bills table */
+  .bills-table { width: 100%; border-collapse: collapse; }
+  .bills-table th {
+    text-align: left;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-dim);
+    font-weight: 600;
+    padding: 0 8px 10px;
+    white-space: nowrap;
+  }
+  .bills-table th.num, .bills-table td.num { text-align: right; }
+  .bills-table td { padding: 6px 8px; vertical-align: middle; }
+  .bills-table tr.bill-row { border-top: 1px solid var(--border); }
+  .bills-table input, .bills-table select {
+    padding: 7px 8px;
+    font-size: .85rem;
+    border-radius: 7px;
+  }
+  .bills-table input.num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+  .col-name { min-width: 130px; }
+  .empty-row td { color: var(--text-dim); text-align: center; padding: 18px; font-size: .88rem; }
+  .freq-note { font-size: .68rem; color: var(--text-dim); white-space: nowrap; }
+
+  /* Balance cell toggle */
+  .bal-toggle {
+    margin-top: 5px;
+    font-size: .7rem;
+    color: var(--accent);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bal-toggle:hover { text-decoration: underline; }
+  .bal-toggle .caret { transition: transform .15s; display: inline-block; }
+  .bal-toggle.open .caret { transform: rotate(90deg); }
+
+  /* Payment detail panel */
+  .detail-row > td { background: var(--bg); padding: 0; border-top: none; }
+  .detail-panel {
+    padding: 16px 18px;
+    margin: 0 8px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .detail-panel .dp-title { font-weight: 700; font-size: .92rem; }
+  .pay-stats { display: flex; gap: 26px; flex-wrap: wrap; }
+  .pay-stats .ps { display: flex; flex-direction: column; }
+  .pay-stats .ps .k { font-size: .68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  .pay-stats .ps .v { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pay-stats .ps .v.rem { color: var(--accent); }
+  .pay-stats .ps .v.done { color: var(--green); }
+  .progress {
+    height: 9px; background: var(--bg); border-radius: 999px; overflow: hidden;
+  }
+  .progress > span {
+    display: block; height: 100%; background: var(--green);
+    border-radius: 999px; transition: width .3s;
+  }
+  .progress-label { font-size: .72rem; color: var(--text-dim); margin-top: -8px; }
+  .pay-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .pay-controls input[type="number"] { max-width: 120px; }
+  .pay-controls select { max-width: 110px; }
+  .btn-pay {
+    background: var(--accent); border: 1px solid var(--accent); color: #fff;
+    padding: 9px 14px; border-radius: 8px; font-size: .82rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; white-space: nowrap; transition: filter .15s;
+  }
+  .btn-pay:hover { filter: brightness(1.08); }
+  .btn-pay.ghost { background: transparent; color: var(--accent); }
+  .btn-pay:disabled { opacity: .4; cursor: not-allowed; }
+  .pay-history { display: flex; flex-direction: column; gap: 4px; }
+  .pay-history .ph-empty { font-size: .78rem; color: var(--text-dim); }
+  .ph-row {
+    display: flex; align-items: center; gap: 10px;
+    font-size: .8rem; padding: 6px 10px; background: var(--bg); border-radius: 7px;
+  }
+  .ph-row .ph-date { color: var(--text-dim); min-width: 86px; }
+  .ph-row .ph-amt { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ph-row .ph-del { margin-left: auto; }
+  .badge {
+    font-size: .64rem; text-transform: uppercase; letter-spacing: .04em;
+    padding: 2px 7px; border-radius: 999px; font-weight: 700;
+  }
+  .badge.min { background: var(--accent-soft); color: var(--accent); }
+  .badge.extra { background: var(--green-soft); color: var(--green); }
+
+  /* Bill row actions */
+  .row-actions { white-space: nowrap; text-align: right; }
+  .icon-btn {
+    background: transparent; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: .95rem; padding: 4px 7px; border-radius: 6px;
+    line-height: 1; transition: all .15s;
+  }
+  .icon-btn:hover { color: var(--accent); background: var(--accent-soft); }
+  .pay-table td, .bills-table td { vertical-align: middle; }
+
+  /* Bills payoff list — header + pills */
+  .card-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+  .card-title { display: flex; align-items: center; gap: 10px; font-size: 1.18rem; font-weight: 700; letter-spacing: -.01em; }
+  .card-title svg { color: var(--text-dim); flex-shrink: 0; }
+  .btn-add-item {
+    background: linear-gradient(135deg, #7b5cff, #9d6bff);
+    color: #fff; border: none; padding: 11px 18px; border-radius: 11px;
+    font-size: .9rem; font-weight: 600; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(123, 92, 255, .35); transition: filter .15s, transform .05s;
+  }
+  .btn-add-item:hover { filter: brightness(1.07); }
+  .btn-add-item:active { transform: translateY(1px); }
+  .btn-add-item span { font-size: 1.1rem; line-height: 1; }
+
+  .payoff-table { width: 100%; }
+  /* Let multi-word headers stack (BALANCE / OWED) so the table fits the card width. */
+  .payoff-table th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+  .payoff-table tbody tr { border-top: 1px solid var(--border); }
+  .payoff-table td { padding: 13px 10px; white-space: nowrap; }
+  .payoff-table .col-name { font-weight: 600; white-space: normal; }
+  .bills-wrap { overflow-x: auto; }
+  .bal-link { cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .bal-link .caret { color: var(--text-dim); transition: transform .15s; font-size: .8rem; }
+  .bal-link.open .caret { transform: rotate(90deg); }
+  .bal-link:hover { color: var(--accent); }
+  .row-actions .icon-btn svg { display: block; }
+
+  .pill {
+    display: inline-block; font-size: .66rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; padding: 5px 11px; border-radius: 999px; white-space: nowrap;
+    border: 1px solid transparent; line-height: 1.3;
+  }
+  .pill.t-bill     { background: rgba(79,156,249,.14);  color: #5aa8ff; border-color: rgba(79,156,249,.30); }
+  .pill.t-credit   { background: rgba(139,108,255,.16); color: #a98bff; border-color: rgba(139,108,255,.36); }
+  .pill.t-loan     { background: rgba(230,170,60,.14);  color: #e0a83c; border-color: rgba(230,170,60,.32); }
+  .pill.b-needs    { background: rgba(99,110,250,.16);  color: #8b94ff; border-color: rgba(99,110,250,.34); }
+  .pill.b-wants    { background: rgba(45,180,180,.15);  color: #46c7c7; border-color: rgba(45,180,180,.33); }
+  .pill.b-savings  { background: rgba(63,185,80,.15);   color: #54c265; border-color: rgba(63,185,80,.33); }
+  .pill.b-unassigned { background: var(--surface-2); color: var(--text-dim); border-color: var(--border); }
+  .pill.p-short    { background: rgba(63,185,80,.13);   color: #54c265; border-color: rgba(63,185,80,.30); }
+  .pill.p-long     { background: rgba(230,170,60,.13);  color: #e0a83c; border-color: rgba(230,170,60,.30); }
+  .pill.p-never    { background: var(--red-soft); color: var(--red); border-color: rgba(248,81,73,.35); }
+
+  /* Add / Edit modal */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0, 0, 0, .62);
+    backdrop-filter: blur(2px);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 48px 16px; overflow-y: auto;
+  }
+  .modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%; max-width: 460px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, .5);
+    animation: modalIn .15s ease-out;
+  }
+  @keyframes modalIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px 16px;
+  }
+  .modal-head h3 { font-size: 1.15rem; font-weight: 700; letter-spacing: -.01em; }
+  .modal-close {
+    background: transparent; border: none; color: var(--text-dim);
+    font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px;
+  }
+  .modal-close:hover { color: var(--text); background: var(--surface-2); }
+  .modal-body { padding: 4px 24px 8px; display: flex; flex-direction: column; gap: 16px; }
+  .modal-field label {
+    font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-dim); font-weight: 600; margin-bottom: 7px;
+  }
+  .pct-input { position: relative; }
+  .pct-input::after {
+    content: "%"; position: absolute; right: 13px; top: 50%;
+    transform: translateY(-50%); color: var(--text-dim); pointer-events: none; font-size: .95rem;
+  }
+  .pct-input input { padding-right: 28px; }
+  .modal-err { color: var(--red); font-size: .82rem; min-height: 0; }
+  .modal-err:empty { display: none; }
+  .modal-foot {
+    display: flex; justify-content: flex-end; gap: 10px;
+    padding: 16px 24px 20px; margin-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+  .btn-ghost, .btn-primary {
+    padding: 10px 20px; border-radius: 999px; font-size: .9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .15s; border: 1px solid transparent;
+  }
+  .btn-ghost { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--text-dim); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { filter: brightness(1.08); }
+
+  /* Header account area */
+  .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .acct-email { font-size: .8rem; color: var(--text-dim); }
+  .sync-status { font-size: .75rem; color: var(--text-dim); white-space: nowrap; }
+  .sync-status.saving { color: var(--accent); }
+  .sync-status.saved { color: var(--green); }
+  .sync-status.error { color: var(--red); }
+
+  /* Auth gate */
+  .auth-gate {
+    position: fixed; inset: 0; z-index: 200;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .auth-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px 28px; width: 100%; max-width: 400px;
+    box-shadow: var(--shadow);
+  }
+  .auth-card h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+  .auth-sub { color: var(--text-dim); font-size: .9rem; margin: 8px 0 22px; }
+  .auth-card label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); font-weight: 600; margin-bottom: 7px; }
+  .auth-card input { margin-bottom: 14px; }
+  .auth-btn { width: 100%; justify-content: center; }
+  .auth-link {
+    background: none; border: none; color: var(--accent); cursor: pointer;
+    font-size: .82rem; font-family: inherit; margin-top: 12px; padding: 4px;
+  }
+  .auth-link:hover { text-decoration: underline; }
+  .auth-err { color: var(--red); font-size: .82rem; margin-top: 12px; min-height: 0; }
+  .auth-err:empty { display: none; }
+  .auth-check { font-size: .92rem; color: var(--text); line-height: 1.55; margin-bottom: 16px; }
+  .auth-foot { color: var(--text-dim); font-size: .72rem; margin-top: 20px; text-align: center; }
+  .auth-btn:disabled { opacity: .6; cursor: progress; }
+
+  /* Bucket legend */
+  .legend { margin-top: 18px; display: grid; gap: 8px; }
+  .legend-item {
+    display: flex; gap: 10px; align-items: baseline;
+    font-size: .82rem; color: var(--text-dim);
+    padding: 9px 14px; background: var(--surface-2); border-radius: 9px;
+  }
+  .legend-item b { color: var(--text); font-size: .85rem; min-width: 140px; }
+  .payoff {
+    font-size: .72rem;
+    color: var(--text-dim);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .del-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    line-height: 1;
+    transition: all .15s;
+  }
+  .del-btn:hover { color: var(--red); background: var(--red-soft); }
+
+  .add-btn {
+    margin-top: 14px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    color: var(--accent);
+    padding: 10px 16px;
+    border-radius: 9px;
+    font-size: .88rem;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .add-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* Bill totals */
+  .totals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .stat {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 16px;
+  }
+  .stat .lbl { font-size: .72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  .stat .val { font-size: 1.25rem; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .stat.leftover.pos { background: var(--green-soft); border-color: var(--green); }
+  .stat.leftover.neg { background: var(--red-soft); border-color: var(--red); }
+  .stat.leftover.pos .val { color: var(--green); }
+  .stat.leftover.neg .val { color: var(--red); }
+
+  /* Plan vs Actual */
+  .summary-banner {
+    padding: 14px 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    text-align: center;
+    font-size: 1rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .summary-banner.under { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+  .summary-banner.over { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+
+  .compare-table { width: 100%; border-collapse: collapse; }
+  .compare-table th {
+    text-align: right;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-dim);
+    font-weight: 600;
+    padding: 0 12px 10px;
+  }
+  .compare-table th:first-child { text-align: left; }
+  .compare-table td { padding: 12px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .compare-table td:first-child { text-align: left; }
+  .compare-table tr.crow { border-top: 1px solid var(--border); }
+  .compare-table .bucket-name { font-size: .95rem; }
+  .compare-table .bucket-cats { font-size: .72rem; color: var(--text-dim); font-weight: 400; display: block; margin-top: 2px; }
+  .diff.pos { color: var(--green); }
+  .diff.neg { color: var(--red); }
+  .compare-table tfoot td { border-top: 2px solid var(--border); font-size: 1.02rem; }
+  .bar {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .bar > span { display: block; height: 100%; border-radius: 999px; transition: width .3s; }
+
+  .hint { color: var(--text-dim); font-size: .8rem; margin-top: 14px; text-align: center; }
+  @media (max-width: 600px) {
+    .income-grid { grid-template-columns: 1fr 1fr; }
+    .total-income { grid-column: 1 / -1; text-align: center; }
+    .bank-grid { grid-template-columns: 1fr; }
+    .bills-wrap { overflow-x: auto; }
+    .bills-table { min-width: 720px; }
+    body { padding: 16px 10px 60px; }
+  }
+
+  /* Payday plan */
+  .payday-block { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .payday-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; background: var(--surface-2); }
+  .payday-head .pd-date { font-weight: 700; }
+  .payday-head .pd-src { color: var(--text-dim); font-size: .78rem; }
+  .payday-head .pd-amt { font-weight: 700; margin-left: auto; }
+  .payday-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: .9rem; }
+  .payday-row .pd-due { color: var(--text-dim); font-size: .76rem; margin-left: 8px; }
+  .payday-row.pd-extra { color: var(--green); font-weight: 600; }
+  .payday-row.pd-spend { color: var(--text-dim); }
+  .payday-row.pd-short { color: var(--red); font-weight: 600; }
+  .plan-cell .plan-line { white-space: nowrap; font-size: .82rem; }
+  .plan-cell .plan-line.extra { color: var(--green); font-weight: 600; }
+  .plan-cell .plan-line .pl-date { color: var(--text-dim); }
+
+  /* Modal field hint */
+  .field-hint { font-size: .72rem; color: var(--text-dim); margin-top: 6px; line-height: 1.4; }
+
+  /* AI Money Coach */
+  .advisor-card { border-color: rgba(123,92,255,.35); box-shadow: 0 1px 3px rgba(0,0,0,.4), 0 6px 24px rgba(123,92,255,.12); }
+  .advisor-body {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 11px;
+    padding: 16px 18px; min-height: 64px; max-height: 460px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .advisor-empty { color: var(--text-dim); font-size: .9rem; line-height: 1.55; }
+  .advisor-msg { display: flex; flex-direction: column; gap: 4px; }
+  .advisor-msg .who { font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--text-dim); }
+  .advisor-msg.user { align-items: flex-end; }
+  .advisor-msg.user .bubble {
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    color: var(--text); padding: 9px 13px; border-radius: 11px; max-width: 85%;
+    font-size: .9rem; white-space: pre-wrap;
+  }
+  .advisor-msg.assistant .bubble { font-size: .92rem; color: var(--text); max-width: 100%; }
+  /* Lightweight markdown styling */
+  .md h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); margin: 14px 0 6px; font-weight: 700; }
+  .md h3:first-child { margin-top: 0; }
+  .md p { margin: 0 0 9px; line-height: 1.55; }
+  .md ul, .md ol { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+  .md li { line-height: 1.5; }
+  .md strong { color: #fff; font-weight: 700; }
+  .md p:last-child, .md ul:last-child, .md ol:last-child { margin-bottom: 0; }
+  .advisor-typing { color: var(--text-dim); font-size: .88rem; display: inline-flex; align-items: center; gap: 7px; }
+  .advisor-typing .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.2s infinite; }
+  .advisor-typing .dot:nth-child(2) { animation-delay: .2s; }
+  .advisor-typing .dot:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+  .advisor-err { color: var(--red); font-size: .85rem; }
+  .advisor-input { display: flex; gap: 10px; margin-top: 14px; }
+  .advisor-input input { flex: 1; }
+  .advisor-input .btn-pay { padding: 11px 20px; }
+  .advisor-input .btn-pay:disabled { opacity: .5; cursor: not-allowed; }
+  .advisor-disclaimer { text-align: left; margin-top: 10px; }
+
+  /* Credit Report Guard */
+  .util-overall { font-size: .85rem; color: var(--text-dim); font-weight: 600; }
+  .util-overall b { font-variant-numeric: tabular-nums; }
+  .credit-row {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .credit-row.urgent { border-color: var(--red); background: var(--red-soft); }
+  .credit-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .credit-top .cc-name { font-weight: 700; font-size: .98rem; }
+  .credit-top .cc-util { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cc-util.lo { color: var(--green); }
+  .cc-util.mid { color: #e0a83c; }
+  .cc-util.hi { color: var(--red); }
+  .util-bar { height: 8px; background: var(--bg); border-radius: 999px; overflow: hidden; margin: 9px 0; }
+  .util-bar > span { display: block; height: 100%; border-radius: 999px; transition: width .3s; }
+  .util-bar > span.lo { background: var(--green); }
+  .util-bar > span.mid { background: #e0a83c; }
+  .util-bar > span.hi { background: var(--red); }
+  .credit-action { font-size: .86rem; line-height: 1.5; }
+  .credit-action b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .credit-action .cc-date { color: var(--accent); font-weight: 600; }
+  .credit-action .cc-soon { color: var(--red); font-weight: 700; }
+  .credit-meta { font-size: .74rem; color: var(--text-dim); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Budget Planner</h1>
+      <div class="sub">Set your paychecks, pick a plan, and every dollar — weekly and monthly — recalculates instantly.</div>
+    </div>
+    <div class="header-actions">
+      <span class="sync-status" id="syncStatus"></span>
+      <span class="acct-email" id="acctEmail"></span>
+      <button class="btn-export" id="exportBtn" title="Download a CSV you can open in Excel or Google Sheets">⬇ Export CSV</button>
+      <button class="btn-export" id="signOutBtn" style="display:none" title="Sign out">Sign out</button>
+    </div>
+  </header>
+
+  <!-- AI ADVISOR -->
+  <section class="card advisor-card" id="advisorCard">
+    <div class="card-header">
+      <div class="card-title"><span>AI Money Coach</span></div>
+      <button class="btn-add-item" id="analyzeBtn"><span>✦</span> Analyze my budget</button>
+    </div>
+    <div class="advisor-body" id="advisorBody">
+      <div class="advisor-empty" id="advisorEmpty">Ask anything about your money — “Can I afford a $300/mo car payment?”, “Which card should I pay first?”, “How do I get my credit score up before April?” Or hit <b>Analyze my budget</b> for a full read.</div>
+    </div>
+    <div class="advisor-input">
+      <input type="text" id="advisorInput" placeholder="Ask your money coach…" autocomplete="off" />
+      <button class="btn-pay" id="advisorSend">Send</button>
+    </div>
+    <div class="hint advisor-disclaimer">Educational guidance based on your numbers — not licensed financial advice.</div>
+  </section>
+
+  <!-- INCOME & PAYCHECKS -->
+  <section class="card">
+    <h2>Income &amp; Paychecks</h2>
+    <div class="earner-head">
+      <span>Earner</span>
+      <span>Biweekly paycheck</span>
+      <span>First payday</span>
+      <span></span>
+    </div>
+    <div id="earners"></div>
+    <button class="add-btn" id="addEarner">+ Add earner</button>
+
+    <div class="commission-field">
+      <label for="commission">Commission — added to the last paycheck of the month</label>
+      <div class="money-input"><input type="number" id="commission" min="0" step="any" placeholder="0.00" /></div>
+    </div>
+
+    <div class="month-nav">
+      <button class="navbtn" id="prevMonth" title="Previous month">‹</button>
+      <span class="month-label" id="monthLabel">—</span>
+      <button class="navbtn" id="nextMonth" title="Next month">›</button>
+      <div class="total-income">
+        <div class="lbl">Total Income This Month</div>
+        <div class="val" id="totalIncome">$0.00</div>
+      </div>
+    </div>
+
+    <div class="bills-wrap">
+      <table class="bills-table pay-table">
+        <thead>
+          <tr>
+            <th>Payday</th>
+            <th>Source</th>
+            <th class="num">Amount</th>
+            <th class="num" id="thNeeds">Needs</th>
+            <th class="num" id="thWants">Wants</th>
+            <th class="num" id="thSavings">Savings</th>
+          </tr>
+        </thead>
+        <tbody id="scheduleBody"></tbody>
+        <tfoot id="scheduleFoot"></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <!-- ACCOUNT BALANCE -->
+  <section class="card">
+    <h2>Account Balance</h2>
+    <div class="bank-grid">
+      <div>
+        <label for="bank">Starting bank balance</label>
+        <div class="money-input"><input type="number" id="bank" min="0" step="any" placeholder="0.00" /></div>
+      </div>
+      <div class="tally" id="cashTally">
+        <div class="lbl">Current Cash</div>
+        <div class="val" id="currentCash">$0.00</div>
+        <div class="hint">Starting − payments logged</div>
+      </div>
+      <div class="tally" id="eomTally">
+        <div class="lbl">Projected Month-End</div>
+        <div class="val" id="projectedEom">$0.00</div>
+        <div class="hint">Starting + income − monthly payments</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLAN SELECTOR + CATEGORIES -->
+  <section class="card">
+    <h2>Budget Plan</h2>
+    <div class="plan-btns" id="planBtns"></div>
+    <div class="cat-list" id="catList"></div>
+  </section>
+
+  <!-- BILLS & DEBT -->
+  <section class="card">
+    <div class="card-header">
+      <div class="card-title" id="billsTitle"><span>Bills &amp; Debt Payoff list</span></div>
+      <button class="btn-add-item" id="addBill"><span>+</span> Add Item</button>
+    </div>
+    <div class="bills-wrap">
+      <table class="bills-table payoff-table">
+        <thead>
+          <tr>
+            <th class="col-name">Name</th>
+            <th>Type</th>
+            <th>Bucket</th>
+            <th class="num">Balance Owed</th>
+            <th class="num">Monthly Payment</th>
+            <th class="num">APR%</th>
+            <th>Due Date</th>
+            <th>This Month's Plan</th>
+            <th>Payoff Estimate</th>
+            <th class="num">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="billsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="totals-grid">
+      <div class="stat">
+        <div class="lbl">Monthly Payments</div>
+        <div class="val" id="totalPayments">$0.00</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Debt Remaining</div>
+        <div class="val" id="totalDebt">$0.00</div>
+      </div>
+      <div class="stat leftover pos" id="leftoverStat">
+        <div class="lbl">Leftover</div>
+        <div class="val" id="leftover">$0.00</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><b>Needs</b><span>Must-pay essentials to live and work — rent/mortgage, utilities, groceries, insurance, minimum loan payments, transportation.</span></div>
+      <div class="legend-item"><b>Wants</b><span>Nice-to-have lifestyle spending you could cut — dining out, streaming, hobbies, travel, shopping, entertainment.</span></div>
+      <div class="legend-item"><b>Savings / Debt Payoff</b><span>Money building your future — emergency fund, retirement, investments, and extra payments beyond the minimum to kill debt faster.</span></div>
+    </div>
+  </section>
+
+  <!-- CREDIT REPORT GUARD -->
+  <section class="card" id="creditCard">
+    <div class="card-header">
+      <div class="card-title"><span>Credit Report Guard</span></div>
+      <div class="util-overall" id="utilOverall"></div>
+    </div>
+    <div class="summary-banner" id="creditBanner">Add a credit card with a credit limit and statement closing day to protect your score.</div>
+    <div id="creditList"></div>
+    <div class="hint">Your reported <b>utilization</b> = balance on the statement closing date ÷ credit limit. Pay each card down to its target <b>2 days before</b> it closes so a low balance reports to the bureaus. Always pay the statement in full by the due date to avoid interest.</div>
+  </section>
+
+  <!-- PAYDAY PLAN -->
+  <section class="card">
+    <div class="card-header">
+      <div class="card-title"><span>Payday Plan</span></div>
+      <div class="plan-btns" style="margin:0">
+        <button class="plan-btn" id="methodAvalanche" title="Extra money goes to the highest-APR debt — pays the least interest overall">Avalanche</button>
+        <button class="plan-btn" id="methodSnowball" title="Extra money goes to the smallest balance — quickest wins for momentum">Snowball</button>
+      </div>
+    </div>
+    <div class="summary-banner" id="paydayBanner">Add paychecks and bills to build your payday plan.</div>
+    <div id="paydayPlan"></div>
+    <div class="hint">Each paycheck covers the bills due before the next check arrives. Whatever your budget plan earmarks for Savings &amp; Debt goes to your priority debt as an extra payment, and rolls to the next debt when one is wiped out.</div>
+  </section>
+
+  <!-- PLAN VS ACTUAL -->
+  <section class="card">
+    <h2>Plan vs Actual</h2>
+    <div class="summary-banner" id="summaryBanner">Add income and bills to see your comparison.</div>
+    <table class="compare-table">
+      <thead>
+        <tr><th>Bucket</th><th>Target</th><th>Actual</th><th>Difference</th></tr>
+      </thead>
+      <tbody id="compareBody"></tbody>
+      <tfoot id="compareFoot"></tfoot>
+    </table>
+    <div class="hint">Tag each bill's bucket above to control how it's counted here.</div>
+  </section>
+</div>
+
+<!-- AUTH GATE -->
+<div class="auth-gate" id="authGate">
+  <div class="auth-card">
+    <h2>Budget Planner</h2>
+    <p class="auth-sub" id="authSub">Sign in to load and sync your budget across devices.</p>
+
+    <div id="authStep1">
+      <label for="authEmail">Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" />
+      <button class="btn-primary auth-btn" id="authSend">Email me a sign-in link</button>
+    </div>
+
+    <div id="authStep2" style="display:none">
+      <p class="auth-check">Check <b id="authEmailEcho"></b> for a sign-in link from Supabase, and open it on this device to finish signing in.</p>
+      <button class="btn-ghost auth-btn" id="authResend">Resend link</button>
+      <button class="auth-link" id="authBack">← Use a different email</button>
+    </div>
+
+    <div class="auth-err" id="authErr"></div>
+    <div class="auth-foot">Your data is private to your account and stored securely.</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+"use strict";
+
+/* ------------------------------ CLOUD ----------------------------- *
+ *  Supabase project (publishable key is safe to expose — Row-Level   *
+ *  Security restricts every user to their own row).                  *
+ * ------------------------------------------------------------------ */
+const SUPABASE_URL = "https://vqhuudfrtuurxfismbph.supabase.co";
+const SUPABASE_KEY = "sb_publishable_IUyRTgtGyYkAebmQIwODmA_gl2noPax";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// UX-only allowlist — real enforcement is a database trigger on auth.users.
+const ALLOWED_EMAILS = ["rbackus2000@gmail.com", "bridgettehuff282@gmail.com"];
+let currentUser = null;
+let syncTimer = null;
+const OWNER_KEY = "budgetPlanner.owner";
+
+/* ------------------------------------------------------------------ *
+ *  PLAN CONFIG — add new plans here. Each category maps to a bucket:  *
+ *  "needs" | "wants" | "savings"                                      *
+ * ------------------------------------------------------------------ */
+const PLANS = [
+  {
+    id: "50-30-20", name: "50/30/20",
+    categories: [
+      { name: "Needs",           pct: 50, bucket: "needs" },
+      { name: "Wants",           pct: 30, bucket: "wants" },
+      { name: "Savings & Debt",  pct: 20, bucket: "savings" },
+    ],
+  },
+  {
+    id: "70-20-10", name: "70/20/10",
+    categories: [
+      { name: "Living Expenses",  pct: 70, bucket: "needs" },
+      { name: "Savings & Debt",   pct: 20, bucket: "savings" },
+      { name: "Giving/Investing", pct: 10, bucket: "savings" },
+    ],
+  },
+  {
+    id: "80-20", name: "80/20",
+    categories: [
+      { name: "Savings",         pct: 20, bucket: "savings" },
+      { name: "Everything Else", pct: 80, bucket: "wants" },
+    ],
+  },
+  {
+    id: "60-20-20", name: "60/20/20",
+    categories: [
+      { name: "Needs",   pct: 60, bucket: "needs" },
+      { name: "Wants",   pct: 20, bucket: "wants" },
+      { name: "Savings", pct: 20, bucket: "savings" },
+    ],
+  },
+  {
+    id: "jars", name: "JARS (6-jar)",
+    categories: [
+      { name: "Necessities",       pct: 55, bucket: "needs" },
+      { name: "Long-term Savings", pct: 10, bucket: "savings" },
+      { name: "Education",         pct: 10, bucket: "savings" },
+      { name: "Play",              pct: 10, bucket: "wants" },
+      { name: "Financial Freedom", pct: 10, bucket: "savings" },
+      { name: "Give",              pct: 5,  bucket: "savings" },
+    ],
+  },
+];
+
+const BUCKETS = [
+  { id: "needs",   label: "Needs / Living Expenses" },
+  { id: "wants",   label: "Wants / Lifestyle" },
+  { id: "savings", label: "Savings / Debt Payoff" },
+];
+
+const TYPES = ["Bill", "Credit Card Debt", "Other Debt / Loan"];
+
+// Buckets selectable in the Add/Edit form (adds an explicit "Unassigned").
+const BUCKET_OPTIONS = BUCKETS.concat([{ id: "unassigned", label: "Unassigned" }]);
+
+// Short, colored badge text per type / bucket for the payoff list.
+const TYPE_BADGE = {
+  "Bill": { cls: "t-bill", label: "Bill" },
+  "Credit Card Debt": { cls: "t-credit", label: "Credit Card" },
+  "Other Debt / Loan": { cls: "t-loan", label: "Other Debt" },
+};
+const BUCKET_BADGE = {
+  needs: { cls: "b-needs", label: "Needs" },
+  wants: { cls: "b-wants", label: "Wants" },
+  savings: { cls: "b-savings", label: "Savings/Debt" },
+  unassigned: { cls: "b-unassigned", label: "Unassigned" },
+};
+
+// Payment frequency → how many times it occurs per month (for monthly-equivalent math).
+// Bi-weekly = 26 payments/year ÷ 12 = ~2.1667 per month.
+const FREQUENCIES = [
+  { id: "monthly",  label: "Monthly",      perMonth: 1 },
+  { id: "biweekly", label: "Every 2 weeks", perMonth: 26 / 12 },
+];
+
+const STORAGE_KEY = "budgetPlanner.v1";
+
+/* ----------------------------- STATE ----------------------------- */
+function defaultEarners() {
+  return [
+    { id: 1, label: "You", amount: "", firstPay: "" },
+    { id: 2, label: "Partner", amount: "", firstPay: "" },
+  ];
+}
+
+let state = {
+  earners: defaultEarners(),
+  commission: "",   // added to the last paycheck of the month
+  bank: "",
+  planId: PLANS[0].id,
+  viewMonth: "",    // "YYYY-MM"; defaults to the current month on init
+  bills: [],
+  payoffMethod: "avalanche", // "avalanche" (highest APR first) | "snowball" (smallest balance first)
+  reportLeadDays: 2, // pay credit cards this many days before the statement closes so a low balance reports
+};
+
+function newEarner() {
+  return { id: (state.earners.reduce((m, e) => Math.max(m, e.id), 0) + 1) || 1, label: "", amount: "", firstPay: "" };
+}
+
+function newBill() {
+  return {
+    id: (state.bills.reduce((m, b) => Math.max(m, b.id), 0) + 1) || 1,
+    name: "", type: "Bill", bucket: "needs",
+    balance: "", payment: "", freq: "monthly", apr: "", due: "",
+    creditLimit: "", // credit cards: limit, for utilization (balance ÷ limit)
+    stmtDay: "",     // statement closing day of month — the balance that reports to the bureaus
+    payments: [], // logged payments: { id, amount, kind: "min"|"extra", date }
+  };
+}
+
+/* --------------------------- PERSISTENCE -------------------------- */
+function defaultState() {
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2 };
+}
+
+// Backfill fields added across versions so older / partial data keeps working.
+function normalizeState() {
+  if (!Array.isArray(state.bills)) state.bills = [];
+  state.bills.forEach(b => {
+    if (!Array.isArray(b.payments)) b.payments = [];
+    if (b.freq == null) b.freq = "monthly";
+    if (b.creditLimit == null) b.creditLimit = "";
+    if (b.stmtDay == null) b.stmtDay = "";
+  });
+  if (!Array.isArray(state.earners) || !state.earners.length) state.earners = defaultEarners();
+  state.earners.forEach((e, i) => { if (e.id == null) e.id = i + 1; });
+  if (!PLANS.some(p => p.id === state.planId)) state.planId = PLANS[0].id;
+  if (!state.viewMonth) state.viewMonth = currentMonthStr();
+  if (state.payoffMethod !== "avalanche" && state.payoffMethod !== "snowball") state.payoffMethod = "avalanche";
+  if (!(num(state.reportLeadDays) > 0)) state.reportLeadDays = 2;
+}
+
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  catch (e) { /* storage full / unavailable — fail quietly */ }
+  scheduleCloudSync();
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state = Object.assign(state, JSON.parse(raw));
+  } catch (e) { /* corrupt data — start fresh */ }
+  normalizeState();
+}
+
+/* ----------------------- CLOUD SYNC ------------------------------- */
+function setSyncStatus(kind) {
+  const el = document.getElementById("syncStatus");
+  if (!el) return;
+  const map = { saving: "Saving…", saved: "✓ Synced", error: "⚠ Offline — saved locally", "": "" };
+  el.textContent = map[kind] || "";
+  el.className = "sync-status" + (kind ? " " + kind : "");
+}
+
+function scheduleCloudSync() {
+  if (!currentUser) return;
+  setSyncStatus("saving");
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(cloudSync, 700);
+}
+
+async function cloudSync() {
+  if (!currentUser) return;
+  const { error } = await sb.from("budgets").upsert(
+    { user_id: currentUser.id, data: state, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" }
+  );
+  setSyncStatus(error ? "error" : "saved");
+}
+
+async function cloudLoad() {
+  setSyncStatus("saving");
+  const { data, error } = await sb.from("budgets").select("data").eq("user_id", currentUser.id).maybeSingle();
+  if (error) { setSyncStatus("error"); renderAll(); return; } // keep local cache on failure
+
+  if (data && data.data && Object.keys(data.data).length) {
+    state = Object.assign(defaultState(), data.data);   // cloud is source of truth
+    normalizeState();
+    save();                                             // refresh local cache
+    setSyncStatus("saved");
+  } else {
+    // No cloud row yet. Migrate local data up only if it belongs to this user.
+    const owner = localStorage.getItem(OWNER_KEY);
+    if (owner && owner !== currentUser.id) { state = defaultState(); normalizeState(); }
+    await cloudSync();                                  // push current state up
+  }
+  localStorage.setItem(OWNER_KEY, currentUser.id);
+  renderAll();
+}
+
+function renderAll() {
+  renderIncome(); renderEarners(); renderPlans();
+  renderCategories(); renderSchedule(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit();
+}
+
+/* ----------------------- DOM HELPERS (no innerHTML) --------------- */
+function el(tag, opts, children) {
+  const node = document.createElement(tag);
+  if (opts) {
+    if (opts.class) node.className = opts.class;
+    if (opts.text != null) node.textContent = opts.text;
+    if (opts.title != null) node.title = opts.title;
+    if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
+    if (opts.style) for (const k in opts.style) node.style[k] = opts.style[k];
+    if (opts.on) for (const ev in opts.on) node.addEventListener(ev, opts.on[ev]);
+    if (opts.props) for (const k in opts.props) node[k] = opts.props[k];
+  }
+  if (children) (Array.isArray(children) ? children : [children]).forEach(c => {
+    if (c != null) node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  });
+  return node;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+// Build a small line-icon SVG from a list of path "d" strings.
+function svgIcon(paths, size) {
+  const NS = "http://www.w3.org/2000/svg";
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("width", size || 16); s.setAttribute("height", size || 16);
+  s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor");
+  s.setAttribute("stroke-width", "2"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+  paths.forEach(d => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); s.appendChild(p); });
+  return s;
+}
+const ICON_EDIT = ["M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"];
+const ICON_TRASH = ["M3 6h18", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M10 11v6", "M14 11v6"];
+const ICON_FILE = ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z", "M14 2v6h6", "M16 13H8", "M16 17H8", "M10 9H8"];
+
+/* ---------------------------- HELPERS ----------------------------- */
+const num = v => { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : 0; };
+const fmt = n => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const activePlan = () => PLANS.find(p => p.id === state.planId) || PLANS[0];
+
+/* ----------------------- PAY SCHEDULE ----------------------------- */
+const DAY_MS = 24 * 3600 * 1000;
+function parseDate(s) {
+  const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; // local midnight, no TZ shift
+}
+function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function currentMonthStr() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function viewYM() {
+  const m = String(state.viewMonth || currentMonthStr()).match(/^(\d{4})-(\d{2})$/);
+  return m ? { y: +m[1], m: +m[2] - 1 } : { y: new Date().getFullYear(), m: new Date().getMonth() };
+}
+
+// Every biweekly payday (from firstPay) that falls inside the given month.
+function payDatesInMonth(firstPayStr, y, m) {
+  const first = parseDate(firstPayStr);
+  if (!first) return [];
+  const monthStart = new Date(y, m, 1);
+  const monthEnd = new Date(y, m + 1, 0);
+  // Jump in 14-day steps to the first payday on/after the month start.
+  const steps = Math.floor((monthStart - first) / DAY_MS / 14);
+  let d = addDays(first, steps * 14);
+  while (d < monthStart) d = addDays(d, 14);
+  const dates = [];
+  while (d <= monthEnd) { dates.push(d); d = addDays(d, 14); }
+  return dates;
+}
+
+// Build the selected month's paychecks (sorted), with commission on the last one.
+function buildSchedule() {
+  const { y, m } = viewYM();
+  const checks = [];
+  state.earners.forEach(e => {
+    const amt = num(e.amount);
+    if (amt <= 0 || !e.firstPay) return;
+    payDatesInMonth(e.firstPay, y, m).forEach(d => {
+      checks.push({ date: d, label: e.label || "Income", amount: amt, isCommission: false });
+    });
+  });
+  checks.sort((a, b) => a.date - b.date);
+  const comm = num(state.commission);
+  if (comm > 0) {
+    const lastDate = checks.length ? checks[checks.length - 1].date : new Date(y, m + 1, 0);
+    checks.push({ date: lastDate, label: "Commission", amount: comm, isCommission: true });
+  }
+  return checks;
+}
+
+const totalIncome = () => buildSchedule().reduce((s, c) => s + c.amount, 0);
+
+// Active plan's percentage going to each of the three buckets.
+function planBucketPercents() {
+  const p = { needs: 0, wants: 0, savings: 0 };
+  activePlan().categories.forEach(c => { p[c.bucket] += c.pct; });
+  return p;
+}
+
+// Monthly-equivalent of a bill's payment, accounting for its frequency.
+function monthlyPayment(bill) {
+  const f = FREQUENCIES.find(x => x.id === bill.freq) || FREQUENCIES[0];
+  return num(bill.payment) * f.perMonth;
+}
+
+// Debt paydown: original balance is fixed; current = original − total logged payments.
+const paidTotal = b => (b.payments || []).reduce((s, p) => s + num(p.amount), 0);
+const currentBalance = b => Math.max(0, num(b.balance) - paidTotal(b));
+
+// Account tallies.
+const totalMonthlyPayments = () => state.bills.reduce((s, b) => s + monthlyPayment(b), 0);
+const totalLoggedPayments = () => state.bills.reduce((s, b) => s + paidTotal(b), 0);
+const currentCash = () => num(state.bank) - totalLoggedPayments();
+const projectedEOM = () => num(state.bank) + totalIncome() - totalMonthlyPayments();
+
+// Rows whose payment panel is currently expanded (in-memory only, not persisted).
+const expanded = new Set();
+
+/* --------------------- CONSUMER CREDIT HELPERS -------------------- *
+ *  Utilization = reported balance ÷ limit. The balance that reports   *
+ *  to the bureaus is the one on the card as of its STATEMENT CLOSING   *
+ *  date (not the due date). To keep a low balance reporting, pay down  *
+ *  a couple days before that close.                                   *
+ * ------------------------------------------------------------------ */
+const isCreditCard = b => b.type === "Credit Card Debt";
+
+// Cards with a credit limit set — the ones we can do utilization math on.
+function creditCards() {
+  return state.bills.filter(b => isCreditCard(b) && num(b.creditLimit) > 0);
+}
+
+// Reported utilization fraction (0–1+) for one card, or null if no limit.
+function utilization(bill) {
+  const limit = num(bill.creditLimit);
+  if (limit <= 0) return null;
+  return currentBalance(bill) / limit;
+}
+
+// Overall utilization across all cards that have a limit (total bal ÷ total limit).
+function overallUtilization() {
+  const cards = creditCards();
+  if (!cards.length) return null;
+  const bal = cards.reduce((s, c) => s + currentBalance(c), 0);
+  const limit = cards.reduce((s, c) => s + num(c.creditLimit), 0);
+  return limit > 0 ? bal / limit : null;
+}
+
+// The next statement closing date for a day-of-month, relative to `from` (today).
+// Returns a Date at local midnight, or null if no closing day is set.
+function nextStatementClose(stmtDay, from) {
+  const day = parseInt(stmtDay, 10);
+  if (!(day >= 1 && day <= 31)) return null;
+  const base = from || new Date();
+  const today = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  // Clamp the day to each month's length (e.g. "31" → last day of February).
+  const clamped = (y, m) => Math.min(day, new Date(y, m + 1, 0).getDate());
+  let y = today.getFullYear(), m = today.getMonth();
+  let close = new Date(y, m, clamped(y, m));
+  if (close < today) { m += 1; close = new Date(y, m, clamped(today.getFullYear(), m)); }
+  return close;
+}
+
+// "Pay by" date to protect the score = statement close − reportLeadDays.
+function reportSafeDate(stmtDay, from) {
+  const close = nextStatementClose(stmtDay, from);
+  if (!close) return null;
+  return addDays(close, -num(state.reportLeadDays || 2));
+}
+
+// Whole days from today until a date (negative = in the past).
+function daysUntil(date, from) {
+  if (!date) return null;
+  const base = from || new Date();
+  const today = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  return Math.round((date - today) / DAY_MS);
+}
+
+// Target reported balance to land a card at/under a utilization goal (default 9%).
+function targetReportBalance(bill, goalPct) {
+  const limit = num(bill.creditLimit);
+  if (limit <= 0) return 0;
+  const goal = (goalPct == null ? 9 : goalPct) / 100;
+  return Math.max(0, Math.floor(limit * goal));
+}
+
+// Months to pay off a balance at a given APR with a fixed monthly payment.
+function monthsToPayoff(balance, apr, payment) {
+  balance = num(balance); payment = num(payment); apr = num(apr);
+  if (balance <= 0 || payment <= 0) return null;
+  const r = apr / 100 / 12;
+  if (r === 0) return Math.ceil(balance / payment);
+  if (payment <= balance * r) return Infinity; // never covers interest
+  const n = Math.log(payment / (payment - balance * r)) / Math.log(1 + r);
+  return Math.ceil(n);
+}
+
+/* ----------------------- PAYDAY ALLOCATOR ------------------------- */
+// Debts still carrying a balance, in payoff-priority order.
+function rankedDebts() {
+  const debts = state.bills.filter(b => currentBalance(b) > 0);
+  debts.sort((a, b) => state.payoffMethod === "snowball"
+    ? currentBalance(a) - currentBalance(b)
+    : (num(b.apr) - num(a.apr)) || (currentBalance(a) - currentBalance(b)));
+  return debts;
+}
+
+// Allocate the viewed month's paychecks: each check covers the bills due
+// before the next check arrives, then routes the plan's Savings/Debt share
+// of the check as an extra payment toward the priority debt.
+function buildPaydayPlan() {
+  const { y, m } = viewYM();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const checks = buildSchedule();
+  if (!checks.length) return null;
+
+  // Same-day checks (incl. commission) pool into one payday window.
+  const windows = [];
+  checks.forEach(c => {
+    const last = windows[windows.length - 1];
+    if (last && last.date.getTime() === c.date.getTime()) { last.amount += c.amount; last.sources.push(c.label); }
+    else windows.push({ date: c.date, amount: c.amount, sources: [c.label], bills: [], extras: [] });
+  });
+
+  // Each bill → concrete due event(s) this month. No due day = day 1.
+  // Biweekly bills hit twice, ~14 days apart.
+  const events = [];
+  state.bills.forEach(b => {
+    if (num(b.payment) <= 0) return;
+    if (num(b.balance) > 0 && currentBalance(b) <= 0) return; // already paid off
+    const day = Math.min(Math.max(parseInt(b.due, 10) || 1, 1), daysInMonth);
+    const days = b.freq === "biweekly" ? [day, ((day + 13) % daysInMonth) + 1].sort((a, c) => a - c) : [day];
+    days.forEach(d => events.push({ bill: b, day: d, date: new Date(y, m, d) }));
+  });
+
+  // Pay from the last check on/before the due date; bills due before the
+  // first check fall to it, flagged so they read as "pay from cash on hand".
+  events.forEach(ev => {
+    let w = null;
+    for (let i = 0; i < windows.length; i++) if (windows[i].date <= ev.date) w = windows[i];
+    const early = !w;
+    (w || windows[0]).bills.push({ bill: ev.bill, amount: num(ev.bill.payment), day: ev.day, early });
+  });
+
+  const savingsPct = planBucketPercents().savings / 100;
+  const debts = rankedDebts();
+  const remaining = {};
+  debts.forEach(d => { remaining[d.id] = currentBalance(d); });
+
+  windows.forEach(w => {
+    w.bills.sort((a, b) => a.day - b.day);
+    w.minTotal = w.bills.reduce((s, x) => s + x.amount, 0);
+    // Scheduled minimums also chip debt balances down as the month plays out.
+    w.bills.forEach(x => { if (remaining[x.bill.id] != null) remaining[x.bill.id] = Math.max(0, remaining[x.bill.id] - x.amount); });
+
+    const surplus = w.amount - w.minTotal;
+    w.shortfall = surplus < 0 ? -surplus : 0;
+    let extra = Math.max(0, Math.min(w.amount * savingsPct, surplus));
+    for (let i = 0; i < debts.length && extra > 0.005; i++) {
+      const d = debts[i];
+      if (remaining[d.id] <= 0.005) continue; // paid off — roll extra to the next debt
+      const amt = Math.min(extra, remaining[d.id]);
+      w.extras.push({ bill: d, amount: amt });
+      remaining[d.id] -= amt; extra -= amt;
+    }
+    w.extraTotal = w.extras.reduce((s, x) => s + x.amount, 0);
+    w.spendLeft = Math.max(0, surplus - w.extraTotal);
+  });
+
+  const totalExtra = windows.reduce((s, w) => s + w.extraTotal, 0);
+
+  // Motivation line: how much sooner the priority debt dies with this extra.
+  let boost = null;
+  if (debts.length && totalExtra > 0) {
+    const t = debts[0];
+    const extraToTarget = windows.reduce((s, w) =>
+      s + w.extras.reduce((a, x) => a + (x.bill.id === t.id ? x.amount : 0), 0), 0);
+    if (extraToTarget > 0) {
+      const base = monthsToPayoff(currentBalance(t), t.apr, monthlyPayment(t));
+      const fast = monthsToPayoff(currentBalance(t), t.apr, monthlyPayment(t) + extraToTarget);
+      if (fast != null && isFinite(fast) && (base === Infinity || (base != null && fast < base)))
+        boost = { name: t.name || "your top debt", base, fast };
+    }
+  }
+
+  return { windows, totalExtra, boost };
+}
+
+// billId → planned payments [{ date, amount, kind: "min"|"extra", early }]
+function planByBill(plan) {
+  const map = {};
+  if (!plan) return map;
+  plan.windows.forEach(w => {
+    w.bills.forEach(x => (map[x.bill.id] = map[x.bill.id] || []).push({ date: w.date, amount: x.amount, kind: "min", early: x.early }));
+    w.extras.forEach(x => (map[x.bill.id] = map[x.bill.id] || []).push({ date: w.date, amount: x.amount, kind: "extra" }));
+  });
+  return map;
+}
+
+/* ----------------------------- RENDER ----------------------------- */
+function renderIncome() {
+  document.getElementById("commission").value = state.commission;
+  document.getElementById("bank").value = state.bank;
+}
+
+function renderEarners() {
+  const wrap = document.getElementById("earners");
+  clear(wrap);
+  state.earners.forEach(e => wrap.appendChild(earnerRow(e)));
+}
+
+function earnerRow(e) {
+  const commit = field => ev => { e[field] = ev.target.value; recalcAll(); };
+  return el("div", { class: "earner-row" }, [
+    el("input", { props: { type: "text", value: e.label }, attrs: { placeholder: "Name" }, on: { input: commit("label") } }),
+    el("div", { class: "money-input" }, [
+      el("input", { props: { type: "number", value: e.amount, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: commit("amount") } }),
+    ]),
+    el("input", { props: { type: "date", value: e.firstPay }, attrs: { title: "First payday" }, on: { input: commit("firstPay") } }),
+    el("button", {
+      class: "del-btn", text: "×", title: "Remove earner",
+      on: { click: () => { state.earners = state.earners.filter(x => x.id !== e.id); save(); renderEarners(); recalcAll(); } },
+    }),
+  ]);
+}
+
+function dateShort(d) {
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function renderSchedule() {
+  const { y, m } = viewYM();
+  document.getElementById("monthLabel").textContent =
+    new Date(y, m, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  const pct = planBucketPercents();
+  document.getElementById("thNeeds").textContent = "Needs " + pct.needs + "%";
+  document.getElementById("thWants").textContent = "Wants " + pct.wants + "%";
+  document.getElementById("thSavings").textContent = "Savings " + pct.savings + "%";
+
+  const checks = buildSchedule();
+  const total = checks.reduce((s, c) => s + c.amount, 0);
+  document.getElementById("totalIncome").textContent = fmt(total);
+
+  const body = document.getElementById("scheduleBody");
+  clear(body);
+  if (!checks.length) {
+    body.appendChild(el("tr", { class: "empty-row" }, [
+      el("td", { attrs: { colspan: "6" }, text: "Enter each earner's biweekly paycheck and first payday to build the schedule." }),
+    ]));
+  } else {
+    checks.forEach(c => {
+      body.appendChild(el("tr", null, [
+        el("td", { text: dateShort(c.date) }),
+        el("td", null, [ el("span", { class: "src" + (c.isCommission ? " comm" : ""), text: c.label }) ]),
+        el("td", { class: "num", text: fmt(c.amount) }),
+        el("td", { class: "num", text: fmt(c.amount * pct.needs / 100) }),
+        el("td", { class: "num", text: fmt(c.amount * pct.wants / 100) }),
+        el("td", { class: "num", text: fmt(c.amount * pct.savings / 100) }),
+      ]));
+    });
+  }
+
+  const foot = document.getElementById("scheduleFoot");
+  clear(foot);
+  if (checks.length) {
+    foot.appendChild(el("tr", null, [
+      el("td", { text: "Total" }),
+      el("td", { text: checks.length + (checks.length === 1 ? " check" : " checks") }),
+      el("td", { class: "num", text: fmt(total) }),
+      el("td", { class: "num", text: fmt(total * pct.needs / 100) }),
+      el("td", { class: "num", text: fmt(total * pct.wants / 100) }),
+      el("td", { class: "num", text: fmt(total * pct.savings / 100) }),
+    ]));
+  }
+}
+
+function renderPlans() {
+  const wrap = document.getElementById("planBtns");
+  clear(wrap);
+  PLANS.forEach(p => {
+    wrap.appendChild(el("button", {
+      class: "plan-btn" + (p.id === state.planId ? " active" : ""),
+      text: p.name,
+      on: { click: () => {
+        state.planId = p.id;
+        renderPlans(); recalcAll();
+      } },
+    }));
+  });
+}
+
+function renderCategories() {
+  const list = document.getElementById("catList");
+  const income = totalIncome();
+  clear(list);
+  activePlan().categories.forEach(c => {
+    list.appendChild(el("div", { class: "cat-row" }, [
+      el("span", { class: "name", text: c.name }),
+      el("span", { class: "pct", text: c.pct + "%" }),
+      el("span", { class: "amt", text: fmt(income * c.pct / 100) }),
+    ]));
+  });
+}
+
+function renderBills() {
+  const body = document.getElementById("billsBody");
+  clear(body);
+  if (state.bills.length === 0) {
+    body.appendChild(el("tr", { class: "empty-row" }, [
+      el("td", { attrs: { colspan: "10" }, text: "No bills yet — add your rent, cards, and loans below." }),
+    ]));
+  } else {
+    const planned = planByBill(buildPaydayPlan());
+    state.bills.forEach(bill => {
+      body.appendChild(billRow(bill, planned[bill.id]));
+      if (expanded.has(bill.id)) body.appendChild(detailRow(bill));
+    });
+  }
+  renderBillTotals();
+}
+
+function billRow(bill, planned) {
+  const tr = el("tr", { class: "bill-row" });
+  const td = (text, cls) => el("td", { class: cls || "", text: text });
+
+  // Name
+  tr.appendChild(td(bill.name || "Untitled", "col-name"));
+
+  // Type pill
+  const tb = TYPE_BADGE[bill.type] || { cls: "t-bill", label: bill.type || "—" };
+  tr.appendChild(el("td", null, [ el("span", { class: "pill " + tb.cls, text: tb.label }) ]));
+
+  // Bucket pill
+  const bb = BUCKET_BADGE[bill.bucket] || BUCKET_BADGE.unassigned;
+  tr.appendChild(el("td", null, [ el("span", { class: "pill " + bb.cls, text: bb.label }) ]));
+
+  // Balance owed (remaining) — clickable to expand the payment panel for debts
+  const balCell = el("td", { class: "num" });
+  if (num(bill.balance) > 0) {
+    const link = el("span", { class: "bal-link" + (expanded.has(bill.id) ? " open" : ""), title: "Track payments" }, [
+      el("span", { text: fmt(currentBalance(bill)) }),
+      el("span", { class: "caret", text: "›" }),
+    ]);
+    link.addEventListener("click", () => {
+      if (expanded.has(bill.id)) expanded.delete(bill.id); else expanded.add(bill.id);
+      renderBills();
+    });
+    balCell.appendChild(link);
+  } else {
+    balCell.appendChild(document.createTextNode("—"));
+  }
+  tr.appendChild(balCell);
+
+  // Monthly payment (monthly-equivalent so the column is truly monthly)
+  const payCell = td(fmt(monthlyPayment(bill)), "num");
+  if (bill.freq === "biweekly") payCell.title = "= " + fmt(num(bill.payment)) + " every 2 weeks";
+  tr.appendChild(payCell);
+
+  // APR
+  tr.appendChild(td(num(bill.apr) ? (+num(bill.apr).toFixed(2)) + "%" : "—", "num"));
+
+  // Due date as "Day X"
+  tr.appendChild(td(formatDue(bill.due)));
+
+  // Planned payments this month (from the payday allocator)
+  const planCell = el("td", { class: "plan-cell" });
+  if (planned && planned.length) {
+    planned.forEach(p => {
+      planCell.appendChild(el("div", { class: "plan-line" + (p.kind === "extra" ? " extra" : "") }, [
+        el("span", { class: "pl-date", text: dateShort(p.date).replace(/^\w+, /, "") + " · " }),
+        el("span", { text: fmt(p.amount) + (p.kind === "extra" ? " extra" : "") }),
+      ]));
+    });
+  } else {
+    planCell.appendChild(document.createTextNode("—"));
+  }
+  tr.appendChild(planCell);
+
+  // Payoff estimate pill
+  tr.appendChild(el("td", null, [ payoffBadge(bill) ]));
+
+  // Actions: edit + delete
+  tr.appendChild(el("td", { class: "row-actions num" }, [
+    el("button", { class: "icon-btn", title: "Edit", on: { click: () => openBillModal(bill) } }, [ svgIcon(ICON_EDIT) ]),
+    el("button", { class: "icon-btn", title: "Delete", on: { click: () => {
+      state.bills = state.bills.filter(b => b.id !== bill.id);
+      recalcAll();
+    } } }, [ svgIcon(ICON_TRASH) ]),
+  ]));
+
+  return tr;
+}
+
+function formatDue(due) {
+  const s = String(due == null ? "" : due).trim();
+  if (!s) return "—";
+  return /^\d+$/.test(s) ? "Day " + s : s;
+}
+
+function payoffBadge(bill) {
+  const m = monthsToPayoff(currentBalance(bill), bill.apr, monthlyPayment(bill));
+  if (m === null) return el("span", { text: "—" });
+  if (m === Infinity) return el("span", { class: "pill p-never", text: "never", title: "Payment doesn't cover interest" });
+  const yrs = Math.floor(m / 12), mo = m % 12;
+  return el("span", {
+    class: "pill " + (m <= 24 ? "p-short" : "p-long"),
+    text: m + " mos",
+    title: yrs ? (yrs + "y " + mo + "m") : (m + " months"),
+  });
+}
+
+function selectEl(opts, value, onchange) {
+  const s = el("select", { on: { change: onchange } });
+  opts.forEach(([val, label]) => {
+    const o = el("option", { text: label, props: { value: val } });
+    if (val === value) o.selected = true;
+    s.appendChild(o);
+  });
+  return s;
+}
+
+/* ----------------------- ADD / EDIT MODAL ------------------------- */
+function moneyInput(value, oninput) {
+  return el("div", { class: "money-input" }, [
+    el("input", { props: { type: "number", value: value, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: oninput } }),
+  ]);
+}
+function pctInput(value, oninput) {
+  return el("div", { class: "pct-input" }, [
+    el("input", { props: { type: "number", value: value, min: "0", step: "any" }, attrs: { placeholder: "0.0" }, on: { input: oninput } }),
+  ]);
+}
+
+function openBillModal(existing) {
+  const isEdit = !!existing;
+  const draft = isEdit ? Object.assign({}, existing) : newBill();
+
+  const overlay = el("div", { class: "modal-overlay" });
+  const close = () => {
+    if (overlay.parentNode) document.body.removeChild(overlay);
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+
+  const set = field => e => { draft[field] = e.target.value; };
+  const errEl = el("div", { class: "modal-err" });
+
+  const nameInput = el("input", { props: { type: "text", value: draft.name }, attrs: { placeholder: "e.g. Rent, Visa, Car loan" }, on: { input: set("name") } });
+  const field = (label, control, required) => el("div", { class: "modal-field" }, [
+    el("label", { text: label + (required ? " *" : "") }),
+    control,
+  ]);
+
+  const submit = () => {
+    if (!String(draft.name).trim()) { errEl.textContent = "Item name is required."; nameInput.focus(); return; }
+    if (isEdit) Object.assign(existing, draft); // preserves existing.payments
+    else state.bills.push(draft);
+    recalcAll();
+    close();
+  };
+
+  const card = el("div", { class: "modal-card" }, [
+    el("div", { class: "modal-head" }, [
+      el("h3", { text: isEdit ? "Edit Bill or Debt" : "Add Bill or Debt" }),
+      el("button", { class: "modal-close", text: "×", title: "Close", on: { click: close } }),
+    ]),
+    el("div", { class: "modal-body" }, [
+      field("Item Name", nameInput, true),
+      field("Type", selectEl(TYPES.map(t => [t, t]), draft.type, set("type")), true),
+      field("Budget Bucket", selectEl(BUCKET_OPTIONS.map(b => [b.id, b.label]), draft.bucket, set("bucket")), true),
+      field("Current Balance Owed", moneyInput(draft.balance, set("balance")), false),
+      field("Minimum / Monthly Payment", moneyInput(draft.payment, set("payment")), true),
+      field("Payment Frequency", selectEl(FREQUENCIES.map(f => [f.id, f.label]), draft.freq || "monthly", set("freq")), false),
+      field("Annual Percentage Rate (APR %)", pctInput(draft.apr, set("apr")), false),
+      field("Due Date (Day of Month)", el("input", { props: { type: "text", value: draft.due }, attrs: { placeholder: "e.g. 15" }, on: { input: set("due") } }), false),
+      field("Credit Limit (cards — for utilization)", moneyInput(draft.creditLimit, set("creditLimit")), false),
+      el("div", { class: "modal-field" }, [
+        el("label", { text: "Statement Closing Day (cards)" }),
+        el("input", { props: { type: "text", value: draft.stmtDay }, attrs: { placeholder: "e.g. 3" }, on: { input: set("stmtDay") } }),
+        el("div", { class: "field-hint", text: "The day your billing cycle closes — the balance on this day is what reports to the credit bureaus. Pay down before it to keep utilization low." }),
+      ]),
+      errEl,
+    ]),
+    el("div", { class: "modal-foot" }, [
+      el("button", { class: "btn-ghost", text: "Cancel", on: { click: close } }),
+      el("button", { class: "btn-primary", text: "Save Item", on: { click: submit } }),
+    ]),
+  ]);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  nameInput.focus();
+}
+
+/* ----------------- PAYMENT PANEL (expanded detail row) ------------ */
+function statBlock(k, v, cls) {
+  return el("div", { class: "ps" }, [
+    el("span", { class: "k", text: k }),
+    el("span", { class: "v" + (cls ? " " + cls : ""), text: v }),
+  ]);
+}
+
+function formatDate(iso) {
+  try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
+  catch (e) { return ""; }
+}
+
+function historyRow(bill, p) {
+  const kind = p.kind === "min" ? "min" : "extra";
+  return el("div", { class: "ph-row" }, [
+    el("span", { class: "ph-date", text: formatDate(p.date) }),
+    el("span", { class: "ph-amt", text: fmt(num(p.amount)) }),
+    el("span", { class: "badge " + kind, text: kind }),
+    el("button", { class: "del-btn ph-del", text: "×", title: "Remove payment", on: { click: () => deletePayment(bill, p.id) } }),
+  ]);
+}
+
+function detailRow(bill) {
+  const orig = num(bill.balance);
+  const paid = paidTotal(bill);
+  const remaining = currentBalance(bill);
+  const pct = orig > 0 ? Math.min(100, (paid / orig) * 100) : 0;
+  const fullyPaid = orig > 0 && remaining <= 0;
+  const min = num(bill.payment);
+
+  const stats = el("div", { class: "pay-stats" }, [
+    statBlock("Original", fmt(orig)),
+    statBlock("Paid to date", fmt(paid)),
+    statBlock("Remaining", fmt(remaining), fullyPaid ? "done" : "rem"),
+  ]);
+
+  const progress = el("div", { class: "progress" }, [ el("span", { style: { width: pct + "%" } }) ]);
+  const progressLabel = el("div", { class: "progress-label", text: Math.round(pct) + "% paid off" });
+
+  const payMinBtn = el("button", {
+    class: "btn-pay",
+    text: min > 0 ? "Pay minimum (" + fmt(min) + ")" : "Set a payment amount first",
+    props: { disabled: min <= 0 },
+    on: { click: () => logPayment(bill, min, "min") },
+  });
+  const amtInput = el("input", { class: "num-cell", props: { type: "number", min: "0", step: "any" }, attrs: { placeholder: "0.00" } });
+  const kindSel = selectEl([["extra", "Extra"], ["min", "Minimum"]], "extra", () => {});
+  const logBtn = el("button", {
+    class: "btn-pay ghost", text: "Log payment",
+    on: { click: () => logPayment(bill, amtInput.value, kindSel.value) },
+  });
+  const controls = el("div", { class: "pay-controls" }, [ payMinBtn, amtInput, kindSel, logBtn ]);
+
+  const history = el("div", { class: "pay-history" });
+  if (!bill.payments || bill.payments.length === 0) {
+    history.appendChild(el("div", { class: "ph-empty", text: "No payments logged yet." }));
+  } else {
+    bill.payments.slice().reverse().forEach(p => history.appendChild(historyRow(bill, p)));
+  }
+
+  const panel = el("div", { class: "detail-panel" }, [
+    el("div", { class: "dp-title", text: (bill.name || "This debt") + " — paydown" }),
+    stats, progress, progressLabel, controls,
+    el("div", { class: "dp-title", style: { fontSize: ".72rem", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".04em" }, text: "Payment history" }),
+    history,
+  ]);
+  return el("tr", { class: "detail-row" }, [ el("td", { attrs: { colspan: "10" } }, [panel]) ]);
+}
+
+function logPayment(bill, amount, kind) {
+  amount = num(amount);
+  if (amount <= 0) return;
+  if (!Array.isArray(bill.payments)) bill.payments = [];
+  const id = (bill.payments.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1) || 1;
+  bill.payments.push({ id, amount, kind: kind === "min" ? "min" : "extra", date: new Date().toISOString() });
+  save();
+  renderBills(); renderPaydayPlan();
+}
+
+function deletePayment(bill, pid) {
+  bill.payments = (bill.payments || []).filter(p => p.id !== pid);
+  save();
+  renderBills(); renderPaydayPlan();
+}
+
+function renderBillTotals() {
+  const payments = totalMonthlyPayments();
+  const debt = state.bills.reduce((s, b) => s + currentBalance(b), 0);
+  const leftover = totalIncome() - payments;
+
+  document.getElementById("totalPayments").textContent = fmt(payments);
+  document.getElementById("totalDebt").textContent = fmt(debt);
+  document.getElementById("leftover").textContent = fmt(leftover);
+
+  const stat = document.getElementById("leftoverStat");
+  stat.classList.toggle("pos", leftover >= 0);
+  stat.classList.toggle("neg", leftover < 0);
+
+  renderBank();
+}
+
+function renderBank() {
+  const cash = currentCash();
+  const eom = projectedEOM();
+
+  document.getElementById("currentCash").textContent = fmt(cash);
+  document.getElementById("projectedEom").textContent = fmt(eom);
+
+  const cashTally = document.getElementById("cashTally");
+  cashTally.classList.toggle("pos", cash >= 0);
+  cashTally.classList.toggle("neg", cash < 0);
+
+  const eomTally = document.getElementById("eomTally");
+  eomTally.classList.toggle("pos", eom >= 0);
+  eomTally.classList.toggle("neg", eom < 0);
+}
+
+function renderCompare() {
+  const income = totalIncome();
+  const plan = activePlan();
+
+  // Target dollars per bucket (sum plan categories mapping to each bucket).
+  const target = { needs: 0, wants: 0, savings: 0 };
+  const catNames = { needs: [], wants: [], savings: [] };
+  plan.categories.forEach(c => {
+    target[c.bucket] += income * c.pct / 100;
+    catNames[c.bucket].push(c.name + " " + c.pct + "%");
+  });
+
+  // Actual dollars per bucket from bills; track unassigned separately.
+  const actual = { needs: 0, wants: 0, savings: 0 };
+  let unassigned = 0;
+  state.bills.forEach(b => {
+    if (Object.prototype.hasOwnProperty.call(actual, b.bucket)) actual[b.bucket] += monthlyPayment(b);
+    else unassigned += monthlyPayment(b);
+  });
+
+  const body = document.getElementById("compareBody");
+  clear(body);
+  const maxVal = Math.max(income, 1);
+
+  BUCKETS.forEach(bk => {
+    const t = target[bk.id], a = actual[bk.id], diff = Math.abs(t - a);
+    const under = a <= t;
+    const nameCell = el("td", null, [
+      el("span", { class: "bucket-name", text: bk.label }),
+      el("span", { class: "bucket-cats", text: catNames[bk.id].join(" · ") || "—" }),
+      barNode(a, t, maxVal),
+    ]);
+    body.appendChild(el("tr", { class: "crow" }, [
+      nameCell,
+      el("td", { text: fmt(t) }),
+      el("td", { text: fmt(a) }),
+      el("td", { class: "diff " + (under ? "pos" : "neg"), text: fmt(diff) + (under ? " left" : " over") }),
+    ]));
+  });
+
+  if (unassigned > 0) {
+    body.appendChild(el("tr", { class: "crow" }, [
+      el("td", null, [
+        el("span", { class: "bucket-name", text: "Unassigned" }),
+        el("span", { class: "bucket-cats", text: "Bills with no matching bucket" }),
+      ]),
+      el("td", { text: "—" }),
+      el("td", { text: fmt(unassigned) }),
+      el("td", { class: "diff neg", text: fmt(unassigned) + " over" }),
+    ]));
+  }
+
+  // Footer totals
+  const totalTarget = income; // 100% allocated
+  const totalActual = actual.needs + actual.wants + actual.savings + unassigned;
+  const foot = document.getElementById("compareFoot");
+  clear(foot);
+  foot.appendChild(el("tr", null, [
+    el("td", { text: "Total" }),
+    el("td", { text: fmt(totalTarget) }),
+    el("td", { text: fmt(totalActual) }),
+    el("td", { class: "diff " + (totalActual <= totalTarget ? "pos" : "neg"), text: fmt(Math.abs(totalTarget - totalActual)) }),
+  ]));
+
+  // Summary banner
+  const banner = document.getElementById("summaryBanner");
+  if (income <= 0 && totalActual <= 0) {
+    banner.className = "summary-banner";
+    banner.textContent = "Add income and bills to see your comparison.";
+  } else if (totalActual <= totalTarget) {
+    banner.className = "summary-banner under";
+    banner.textContent = "You're " + fmt(totalTarget - totalActual) + " under plan — room to save or spend.";
+  } else {
+    banner.className = "summary-banner over";
+    banner.textContent = "You're " + fmt(totalActual - totalTarget) + " over plan — committed more than you earn.";
+  }
+}
+
+function barNode(actual, target, max) {
+  const aw = Math.min(100, (actual / max) * 100);
+  const over = actual > target && target > 0;
+  const fill = el("span", { style: { width: aw + "%", background: over ? "var(--red)" : "var(--green)" } });
+  return el("div", { class: "bar" }, [fill]);
+}
+
+/* ----------------------- PAYDAY PLAN RENDER ----------------------- */
+function renderPaydayPlan() {
+  document.getElementById("methodAvalanche").classList.toggle("active", state.payoffMethod !== "snowball");
+  document.getElementById("methodSnowball").classList.toggle("active", state.payoffMethod === "snowball");
+
+  const wrap = document.getElementById("paydayPlan");
+  const banner = document.getElementById("paydayBanner");
+  clear(wrap);
+
+  const plan = buildPaydayPlan();
+  if (!plan || !state.bills.length) {
+    banner.className = "summary-banner";
+    banner.textContent = "Add paychecks and bills to build your payday plan.";
+    return;
+  }
+
+  // Headline: total extra to debt + how much sooner the target debt dies.
+  if (plan.totalExtra > 0) {
+    let msg = "This month's plan sends " + fmt(plan.totalExtra) + " extra to debt.";
+    if (plan.boost) {
+      msg += " " + plan.boost.name + " gone in ~" + plan.boost.fast + " months instead of " +
+        (plan.boost.base === Infinity ? "never" : "~" + plan.boost.base) + ".";
+    }
+    banner.className = "summary-banner under";
+    banner.textContent = msg;
+  } else {
+    const short = plan.windows.some(w => w.shortfall > 0);
+    banner.className = "summary-banner" + (short ? " over" : "");
+    banner.textContent = short
+      ? "Some paychecks don't cover the bills due in their window — see the flags below."
+      : "Bills are covered, but there's no surplus for extra debt payments this month.";
+  }
+
+  plan.windows.forEach(w => {
+    const block = el("div", { class: "payday-block" });
+    block.appendChild(el("div", { class: "payday-head" }, [
+      el("span", { class: "pd-date", text: dateShort(w.date) }),
+      el("span", { class: "pd-src", text: w.sources.join(" + ") }),
+      el("span", { class: "pd-amt", text: fmt(w.amount) }),
+    ]));
+
+    if (!w.bills.length) {
+      block.appendChild(el("div", { class: "payday-row pd-spend" }, [
+        el("span", { text: "No bills due before the next check" }),
+        el("span", { text: "" }),
+      ]));
+    }
+    w.bills.forEach(x => {
+      block.appendChild(el("div", { class: "payday-row" }, [
+        el("span", null, [
+          el("span", { text: x.bill.name || "Untitled" }),
+          el("span", { class: "pd-due", text: x.early ? "due before this check — pay from cash on hand" : "due day " + x.day }),
+        ]),
+        el("span", { text: fmt(x.amount) }),
+      ]));
+    });
+
+    w.extras.forEach(x => {
+      block.appendChild(el("div", { class: "payday-row pd-extra" }, [
+        el("span", { text: "Extra to " + (x.bill.name || "debt") + " ↑" }),
+        el("span", { text: fmt(x.amount) }),
+      ]));
+    });
+
+    if (w.shortfall > 0) {
+      block.appendChild(el("div", { class: "payday-row pd-short" }, [
+        el("span", { text: "Short — this check doesn't cover its bills" }),
+        el("span", { text: "−" + fmt(w.shortfall) }),
+      ]));
+    } else {
+      block.appendChild(el("div", { class: "payday-row pd-spend" }, [
+        el("span", { text: "Left for everyday spending" }),
+        el("span", { text: fmt(w.spendLeft) }),
+      ]));
+    }
+
+    wrap.appendChild(block);
+  });
+}
+
+function setPayoffMethod(m) {
+  state.payoffMethod = m;
+  save(); renderBills(); renderPaydayPlan();
+}
+
+/* ----------------------------- EXPORT ----------------------------- */
+function csvCell(v) {
+  v = v == null ? "" : String(v);
+  return '"' + v.replace(/"/g, '""') + '"';
+}
+function csvRow(arr) { return arr.map(csvCell).join(",") + "\r\n"; }
+
+function exportCSV() {
+  const income = totalIncome();
+  const plan = activePlan();
+  let out = "";
+
+  const { y, m } = viewYM();
+  const monthName = new Date(y, m, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const pct = planBucketPercents();
+
+  // Summary
+  out += csvRow(["Budget Export"]);
+  out += csvRow(["Generated", new Date().toLocaleString("en-US")]);
+  out += csvRow(["Month", monthName]);
+  out += csvRow(["Active plan", plan.name]);
+  out += "\r\n";
+  out += csvRow(["Summary", "Amount"]);
+  state.earners.forEach(e => out += csvRow([(e.label || "Earner") + " (biweekly)", num(e.amount).toFixed(2)]));
+  out += csvRow(["Commission (last check)", num(state.commission).toFixed(2)]);
+  out += csvRow(["Total income this month", income.toFixed(2)]);
+  out += csvRow(["Starting bank balance", num(state.bank).toFixed(2)]);
+  out += csvRow(["Total monthly payments", totalMonthlyPayments().toFixed(2)]);
+  out += csvRow(["Total logged payments", totalLoggedPayments().toFixed(2)]);
+  out += csvRow(["Current cash", currentCash().toFixed(2)]);
+  out += csvRow(["Projected month-end", projectedEOM().toFixed(2)]);
+  out += csvRow(["Debt remaining", state.bills.reduce((s, b) => s + currentBalance(b), 0).toFixed(2)]);
+  out += csvRow(["Leftover (income − payments)", (income - totalMonthlyPayments()).toFixed(2)]);
+  out += "\r\n";
+
+  // Plan categories
+  out += csvRow(["Plan Category", "Percent", "Target $"]);
+  plan.categories.forEach(c => out += csvRow([c.name, c.pct + "%", (income * c.pct / 100).toFixed(2)]));
+  out += "\r\n";
+
+  // Paycheck schedule with per-check plan split
+  out += csvRow(["Paycheck Schedule", monthName]);
+  out += csvRow(["Payday", "Source", "Amount", "Needs " + pct.needs + "%", "Wants " + pct.wants + "%", "Savings " + pct.savings + "%"]);
+  buildSchedule().forEach(c => out += csvRow([
+    dateShort(c.date), c.label, c.amount.toFixed(2),
+    (c.amount * pct.needs / 100).toFixed(2), (c.amount * pct.wants / 100).toFixed(2), (c.amount * pct.savings / 100).toFixed(2),
+  ]));
+  out += "\r\n";
+
+  // Bills & debt
+  out += csvRow([
+    "Name", "Type", "Bucket", "Original Balance", "Paid To Date", "Remaining",
+    "Payment", "Frequency", "Monthly Equivalent", "APR %", "Due", "Payoff (months)",
+  ]);
+  state.bills.forEach(b => {
+    const f = FREQUENCIES.find(x => x.id === b.freq) || FREQUENCIES[0];
+    const bucket = (BUCKETS.find(x => x.id === b.bucket) || {}).label || b.bucket;
+    const m = monthsToPayoff(currentBalance(b), b.apr, monthlyPayment(b));
+    const payoff = m === null ? "" : (m === Infinity ? "never" : m);
+    out += csvRow([
+      b.name, b.type, bucket, num(b.balance).toFixed(2), paidTotal(b).toFixed(2), currentBalance(b).toFixed(2),
+      num(b.payment).toFixed(2), f.label, monthlyPayment(b).toFixed(2), num(b.apr).toFixed(2), b.due, payoff,
+    ]);
+  });
+
+  // Payment history
+  if (state.bills.some(b => (b.payments || []).length)) {
+    out += "\r\n";
+    out += csvRow(["Payment History"]);
+    out += csvRow(["Debt", "Date", "Amount", "Type"]);
+    state.bills.forEach(b => (b.payments || []).forEach(p => {
+      out += csvRow([b.name, formatDate(p.date), num(p.amount).toFixed(2), p.kind]);
+    }));
+  }
+
+  // Trigger download (BOM so Excel reads UTF-8 correctly)
+  const d = new Date();
+  const stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const blob = new Blob(["﻿" + out], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { props: { href: url, download: "budget-export-" + stamp + ".csv" } });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* --------------------- CREDIT REPORT GUARD ------------------------ */
+function utilClass(frac) { return frac < 0.10 ? "lo" : frac < 0.30 ? "mid" : "hi"; }
+
+function renderCredit() {
+  const list = document.getElementById("creditList");
+  const banner = document.getElementById("creditBanner");
+  const overallEl = document.getElementById("utilOverall");
+  clear(list);
+
+  const cards = creditCards();
+  const overall = overallUtilization();
+
+  if (overall != null) {
+    const cls = utilClass(overall);
+    overallEl.textContent = "";
+    overallEl.appendChild(document.createTextNode("Overall utilization: "));
+    overallEl.appendChild(el("b", { class: "cc-util " + cls, text: Math.round(overall * 100) + "%" }));
+  } else {
+    overallEl.textContent = "";
+  }
+
+  if (!cards.length) {
+    banner.style.display = "";
+    banner.textContent = "Add a credit card with a credit limit and statement closing day to protect your score.";
+    return;
+  }
+  banner.style.display = "none";
+
+  cards.forEach(card => {
+    const frac = utilization(card) || 0;
+    const cls = utilClass(frac);
+    const bal = currentBalance(card);
+    const limit = num(card.creditLimit);
+    const safe = reportSafeDate(card.stmtDay, new Date());
+    const close = nextStatementClose(card.stmtDay, new Date());
+    const target = targetReportBalance(card, 9);
+    const payDown = Math.max(0, bal - target);
+    const dUntil = safe ? daysUntil(safe, new Date()) : null;
+    const soon = dUntil != null && dUntil <= num(state.reportLeadDays || 2) + 3;
+
+    const row = el("div", { class: "credit-row" + (soon && bal > target ? " urgent" : "") });
+
+    row.appendChild(el("div", { class: "credit-top" }, [
+      el("span", { class: "cc-name", text: card.name || "Credit card" }),
+      el("span", { class: "cc-util " + cls, text: Math.round(frac * 100) + "% used" }),
+    ]));
+
+    row.appendChild(el("div", { class: "util-bar" }, [
+      el("span", { class: cls, style: { width: Math.min(100, frac * 100) + "%" } }),
+    ]));
+
+    const action = el("div", { class: "credit-action" });
+    if (!card.stmtDay) {
+      action.appendChild(document.createTextNode("Add a statement closing day to get a pay-by date."));
+    } else if (payDown <= 0) {
+      action.appendChild(document.createTextNode("✓ Already under 9% — "));
+      action.appendChild(el("b", { text: fmt(bal) }));
+      action.appendChild(document.createTextNode(" reports clean. Pay the statement in full by the due date."));
+    } else {
+      action.appendChild(document.createTextNode("Pay "));
+      action.appendChild(el("b", { text: fmt(payDown) }));
+      action.appendChild(document.createTextNode(" (down to " + fmt(target) + ") by "));
+      action.appendChild(el("span", { class: soon ? "cc-soon" : "cc-date", text: safe ? dateShort(safe).replace(/^\w+, /, "") : "—" }));
+      if (dUntil != null) action.appendChild(document.createTextNode(dUntil <= 0 ? " (today!)" : " (" + dUntil + " day" + (dUntil === 1 ? "" : "s") + ")"));
+      action.appendChild(document.createTextNode(" to report under 10%."));
+    }
+    row.appendChild(action);
+
+    row.appendChild(el("div", { class: "credit-meta", text:
+      "Balance " + fmt(bal) + " of " + fmt(limit) + " limit" +
+      (close ? " · closes " + dateShort(close).replace(/^\w+, /, "") : "") +
+      (card.due ? " · payment due day " + card.due : "") }));
+
+    list.appendChild(row);
+  });
+}
+
+/* --------------------------- AI ADVISOR --------------------------- */
+const advisorHistory = []; // { role: "user"|"assistant", content }
+let advisorBusy = false;
+
+// Compact, model-friendly snapshot of the current budget + credit picture.
+function buildSnapshot() {
+  const income = totalIncome();
+  const payments = totalMonthlyPayments();
+  const plan = activePlan();
+  const pct = planBucketPercents();
+  const now = new Date();
+  const todayISO = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+  const toISO = d => d ? (d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")) : null;
+
+  return {
+    today: todayISO,
+    plan: { name: plan.name, bucketPercents: pct, categories: plan.categories.map(c => ({ name: c.name, pct: c.pct, bucket: c.bucket })) },
+    income: { thisMonth: +income.toFixed(2), startingBank: num(state.bank), currentCash: +currentCash().toFixed(2), projectedMonthEnd: +projectedEOM().toFixed(2) },
+    monthlyPayments: +payments.toFixed(2),
+    leftover: +(income - payments).toFixed(2),
+    payoffMethod: state.payoffMethod,
+    reportLeadDays: num(state.reportLeadDays || 2),
+    overallUtilizationPct: overallUtilization() == null ? null : Math.round(overallUtilization() * 100),
+    bills: state.bills.map(b => {
+      const util = utilization(b);
+      const safe = reportSafeDate(b.stmtDay, now);
+      const close = nextStatementClose(b.stmtDay, now);
+      const m = monthsToPayoff(currentBalance(b), b.apr, monthlyPayment(b));
+      return {
+        name: b.name, type: b.type, bucket: b.bucket,
+        remainingBalance: +currentBalance(b).toFixed(2),
+        originalBalance: num(b.balance),
+        monthlyPayment: +monthlyPayment(b).toFixed(2),
+        frequency: b.freq, aprPct: num(b.apr), dueDay: b.due || null,
+        payoffMonths: m === null ? null : (m === Infinity ? "never_at_this_payment" : m),
+        creditLimit: num(b.creditLimit) || null,
+        utilizationPct: util == null ? null : Math.round(util * 100),
+        statementClosingDay: b.stmtDay || null,
+        nextStatementClose: toISO(close),
+        payBySafeDate: toISO(safe),
+        targetReportBalance: num(b.creditLimit) > 0 ? targetReportBalance(b, 9) : null,
+      };
+    }),
+  };
+}
+
+// Minimal, XSS-safe markdown → DOM (headers, bold, bullet/numbered lists, paragraphs).
+function mdToDom(text) {
+  const root = el("div", { class: "md" });
+  const lines = String(text).replace(/\r/g, "").split("\n");
+  let i = 0;
+
+  const inline = (s, parent) => {
+    // Split on **bold** spans; everything else is plain text.
+    const parts = String(s).split(/(\*\*[^*]+\*\*)/g);
+    parts.forEach(p => {
+      if (/^\*\*[^*]+\*\*$/.test(p)) parent.appendChild(el("strong", { text: p.slice(2, -2) }));
+      else if (p) parent.appendChild(document.createTextNode(p));
+    });
+  };
+
+  while (i < lines.length) {
+    let line = lines[i];
+    if (!line.trim()) { i++; continue; }
+
+    const h = line.match(/^#{2,4}\s+(.*)$/);
+    if (h) { const el3 = el("h3"); inline(h[1], el3); root.appendChild(el3); i++; continue; }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      const ul = el("ul");
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        const li = el("li"); inline(lines[i].replace(/^\s*[-*]\s+/, ""), li); ul.appendChild(li); i++;
+      }
+      root.appendChild(ul); continue;
+    }
+
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const ol = el("ol");
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        const li = el("li"); inline(lines[i].replace(/^\s*\d+\.\s+/, ""), li); ol.appendChild(li); i++;
+      }
+      root.appendChild(ol); continue;
+    }
+
+    // Paragraph: gather until blank line.
+    const p = el("p"); const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^#{2,4}\s/.test(lines[i]) && !/^\s*([-*]|\d+\.)\s/.test(lines[i])) {
+      buf.push(lines[i]); i++;
+    }
+    inline(buf.join(" "), p); root.appendChild(p);
+  }
+  return root;
+}
+
+function advisorScroll() {
+  const body = document.getElementById("advisorBody");
+  body.scrollTop = body.scrollHeight;
+}
+
+function advisorRenderMsg(role, content) {
+  const body = document.getElementById("advisorBody");
+  const empty = document.getElementById("advisorEmpty");
+  if (empty) empty.remove();
+  const msg = el("div", { class: "advisor-msg " + role }, [
+    el("span", { class: "who", text: role === "user" ? "You" : "Coach" }),
+  ]);
+  if (role === "user") msg.appendChild(el("div", { class: "bubble", text: content }));
+  else msg.appendChild(el("div", { class: "bubble" }, [ mdToDom(content) ]));
+  body.appendChild(msg);
+  advisorScroll();
+}
+
+function advisorSetBusy(busy) {
+  advisorBusy = busy;
+  document.getElementById("advisorSend").disabled = busy;
+  document.getElementById("analyzeBtn").disabled = busy;
+  const body = document.getElementById("advisorBody");
+  let typing = document.getElementById("advisorTyping");
+  if (busy && !typing) {
+    typing = el("div", { class: "advisor-typing", attrs: { id: "advisorTyping" } }, [
+      el("span", { class: "dot" }), el("span", { class: "dot" }), el("span", { class: "dot" }),
+      el("span", { text: "Coach is thinking…" }),
+    ]);
+    body.appendChild(typing); advisorScroll();
+  } else if (!busy && typing) { typing.remove(); }
+}
+
+function advisorError(msg) {
+  const body = document.getElementById("advisorBody");
+  body.appendChild(el("div", { class: "advisor-err", text: "⚠ " + msg }));
+  advisorScroll();
+}
+
+async function runAdvisor(userText) {
+  if (advisorBusy) return;
+  userText = String(userText || "").trim();
+
+  if (!currentUser) { advisorError("Sign in to use the money coach."); return; }
+  if (userText) advisorRenderMsg("user", userText);
+  advisorSetBusy(true);
+
+  let token = null;
+  try {
+    const { data } = await sb.auth.getSession();
+    token = data && data.session ? data.session.access_token : null;
+  } catch (e) {}
+  if (!token) { advisorSetBusy(false); advisorError("Your session expired — sign in again."); return; }
+
+  try {
+    const res = await fetch("/api/advisor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ message: userText, messages: advisorHistory.slice(-24), snapshot: buildSnapshot() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    advisorSetBusy(false);
+
+    if (!res.ok) { advisorError(data.error || "The advisor is unavailable right now."); return; }
+
+    const reply = String(data.reply || "").trim();
+    if (userText) advisorHistory.push({ role: "user", content: userText });
+    else advisorHistory.push({ role: "user", content: "[Analyze my budget]" });
+    advisorHistory.push({ role: "assistant", content: reply });
+    advisorRenderMsg("assistant", reply);
+  } catch (e) {
+    advisorSetBusy(false);
+    advisorError("Couldn't reach the coach. Check your connection and try again.");
+  }
+}
+
+function sendAdvisorInput() {
+  const input = document.getElementById("advisorInput");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  runAdvisor(text);
+}
+
+/* --------------------------- WIRE UP ------------------------------ */
+function recalcAll() {
+  save(); renderSchedule(); renderCategories(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit();
+}
+
+function shiftMonth(delta) {
+  const { y, m } = viewYM();
+  const d = new Date(y, m + delta, 1);
+  state.viewMonth = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  save(); recalcAll();
+}
+
+/* ------------------------------ AUTH ------------------------------ */
+function authErr(msg) { document.getElementById("authErr").textContent = msg || ""; }
+
+function showGate() {
+  document.getElementById("authGate").style.display = "flex";
+  document.getElementById("signOutBtn").style.display = "none";
+  document.getElementById("acctEmail").textContent = "";
+  setSyncStatus("");
+}
+function hideGate() { document.getElementById("authGate").style.display = "none"; }
+
+function onSignedIn(session) {
+  const u = session.user;
+  if (!u.email || ALLOWED_EMAILS.indexOf(u.email.toLowerCase()) < 0) {
+    sb.auth.signOut();
+    authErr("This budget planner is private. That email doesn't have access.");
+    return;
+  }
+  hideGate();
+  if (currentUser && currentUser.id === u.id) return; // already loaded this user
+  currentUser = u;
+  document.getElementById("acctEmail").textContent = u.email;
+  document.getElementById("signOutBtn").style.display = "";
+  cloudLoad();
+}
+function onSignedOut() {
+  currentUser = null;
+  showGate();
+}
+
+async function sendLink() {
+  const btn = document.getElementById("authSend");
+  const email = document.getElementById("authEmail").value.trim();
+  authErr("");
+  if (!email || email.indexOf("@") < 1) { authErr("Enter a valid email address."); return; }
+  if (ALLOWED_EMAILS.indexOf(email.toLowerCase()) < 0) {
+    authErr("This budget planner is private. That email doesn't have access.");
+    return;
+  }
+  btn.disabled = true; btn.textContent = "Sending…";
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true, emailRedirectTo: window.location.origin },
+  });
+  btn.disabled = false; btn.textContent = "Email me a sign-in link";
+  if (error) { authErr(error.message); return; }
+  document.getElementById("authEmailEcho").textContent = email;
+  document.getElementById("authStep1").style.display = "none";
+  document.getElementById("authStep2").style.display = "";
+  document.getElementById("authSub").textContent = "Almost there — one click from your inbox.";
+}
+
+function backToEmail() {
+  document.getElementById("authStep2").style.display = "none";
+  document.getElementById("authStep1").style.display = "";
+  document.getElementById("authSub").textContent = "Sign in to load and sync your budget across devices.";
+  authErr("");
+}
+
+/* ------------------------------ INIT ------------------------------ */
+function init() {
+  load(); // local cache for an instant first paint behind the gate
+
+  document.getElementById("commission").addEventListener("input", e => { state.commission = e.target.value; recalcAll(); });
+  document.getElementById("bank").addEventListener("input", e => { state.bank = e.target.value; save(); renderBank(); });
+  document.getElementById("exportBtn").addEventListener("click", exportCSV);
+  document.getElementById("prevMonth").addEventListener("click", () => shiftMonth(-1));
+  document.getElementById("nextMonth").addEventListener("click", () => shiftMonth(1));
+  document.getElementById("addEarner").addEventListener("click", () => {
+    state.earners.push(newEarner());
+    save(); renderEarners(); recalcAll();
+  });
+  document.getElementById("addBill").addEventListener("click", () => openBillModal(null));
+  document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
+  document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
+  const billsTitle = document.getElementById("billsTitle");
+  billsTitle.insertBefore(svgIcon(ICON_FILE, 20), billsTitle.firstChild);
+
+  // AI money coach
+  document.getElementById("analyzeBtn").addEventListener("click", () => runAdvisor(""));
+  document.getElementById("advisorSend").addEventListener("click", sendAdvisorInput);
+  document.getElementById("advisorInput").addEventListener("keydown", e => { if (e.key === "Enter") sendAdvisorInput(); });
+
+  // Auth wiring
+  document.getElementById("authSend").addEventListener("click", sendLink);
+  document.getElementById("authResend").addEventListener("click", sendLink);
+  document.getElementById("authBack").addEventListener("click", backToEmail);
+  document.getElementById("signOutBtn").addEventListener("click", () => sb.auth.signOut());
+  document.getElementById("authEmail").addEventListener("keydown", e => { if (e.key === "Enter") sendLink(); });
+
+  renderAll();
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if (session && session.user) onSignedIn(session);
+    else onSignedOut();
+  });
+}
+
+init();
+</script>
+</body>
+</html>
