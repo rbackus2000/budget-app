@@ -581,6 +581,26 @@
     font-size: .85rem; color: var(--text-dim);
   }
   .payday-start .ps-amt { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Plan-from (go-live) control */
+  .plan-from-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .plan-from-row label { margin: 0; font-size: .78rem; color: var(--text-dim); font-weight: 600; }
+  .plan-from-row input[type="date"] { width: auto; padding: 8px 10px; font-size: .85rem; }
+  .navbtn-text {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; font-size: .8rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .navbtn-text:hover { border-color: var(--accent); color: var(--accent); }
+  .plan-from-note { font-size: .74rem; color: var(--text-dim); flex: 1 1 220px; min-width: 0; }
+
+  /* Already-received paychecks in the schedule table */
+  .check-received td { opacity: .5; }
+  .received-tag {
+    margin-left: 8px; font-size: .6rem; text-transform: uppercase; letter-spacing: .04em;
+    font-weight: 700; color: var(--green); border: 1px solid var(--green);
+    padding: 1px 6px; border-radius: 999px; opacity: 1; white-space: nowrap;
+  }
   .plan-cell .plan-line { white-space: nowrap; font-size: .82rem; }
   .plan-cell .plan-line.extra { color: var(--green); font-weight: 600; }
   .plan-cell .plan-line .pl-date { color: var(--text-dim); }
@@ -921,6 +941,12 @@
         <button class="plan-btn" id="methodSnowball" title="Extra money goes to the smallest balance — quickest wins for momentum">Snowball</button>
       </div>
     </div>
+    <div class="plan-from-row">
+      <label for="planFrom">Plan from</label>
+      <input type="date" id="planFrom" title="The payday plan projects forward from this date — earlier checks and bills are assumed already settled" />
+      <button class="navbtn-text" id="planFromToday" title="Reset the go-live date to today">Today</button>
+      <span class="plan-from-note" id="planFromNote"></span>
+    </div>
     <div class="summary-banner" id="paydayBanner">Add paychecks and bills to build your payday plan.</div>
     <div id="paydayPlan"></div>
     <div class="hint">Each paycheck covers the bills due before the next check arrives. Whatever your budget plan earmarks for Savings &amp; Debt goes to your priority debt as an extra payment, and rolls to the next debt when one is wiped out.</div>
@@ -1081,6 +1107,7 @@ let state = {
   bills: [],
   payoffMethod: "avalanche", // "avalanche" (highest APR first) | "snowball" (smallest balance first)
   reportLeadDays: 2, // pay credit cards this many days before the statement closes so a low balance reports
+  planStart: "", // "YYYY-MM-DD" go-live date; the payday plan projects forward from here. Empty = today (rolling).
 };
 
 function newEarner() {
@@ -1100,7 +1127,7 @@ function newBill() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2 };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "" };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1119,6 +1146,7 @@ function normalizeState() {
   if (!state.viewMonth) state.viewMonth = currentMonthStr();
   if (state.payoffMethod !== "avalanche" && state.payoffMethod !== "snowball") state.payoffMethod = "avalanche";
   if (!(num(state.reportLeadDays) > 0)) state.reportLeadDays = 2;
+  if (typeof state.planStart !== "string") state.planStart = "";
 }
 
 function save() {
@@ -1231,9 +1259,24 @@ function parseDate(s) {
 }
 function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
 function currentMonthStr() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function todayMidnight() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function todayStr() { const d = todayMidnight(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function viewYM() {
   const m = String(state.viewMonth || currentMonthStr()).match(/^(\d{4})-(\d{2})$/);
   return m ? { y: +m[1], m: +m[2] - 1 } : { y: new Date().getFullYear(), m: new Date().getMonth() };
+}
+
+// Go-live date the payday plan projects forward from. Empty state = today (rolling).
+function effectivePlanStart() { return parseDate(state.planStart) || todayMidnight(); }
+
+// For the viewed month, the earliest date the plan should count: the later of
+// the go-live date and the month's first day (so future months plan in full,
+// and the current month skips checks/bills that already happened).
+function planCutoffDate() {
+  const { y, m } = viewYM();
+  const monthStart = new Date(y, m, 1);
+  const ps = effectivePlanStart();
+  return ps > monthStart ? ps : monthStart;
 }
 
 // Every biweekly payday (from firstPay) that falls inside the given month.
@@ -1393,7 +1436,10 @@ function rankedDebts() {
 function buildPaydayPlan() {
   const { y, m } = viewYM();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
-  const checks = buildSchedule();
+  // Project forward from the go-live date: skip paychecks/bills that already
+  // happened (they're settled and already reflected in the bank balance).
+  const cutoff = planCutoffDate();
+  const checks = buildSchedule().filter(c => c.date >= cutoff);
   if (!checks.length) return null;
 
   // Same-day checks (incl. commission) pool into one payday window.
@@ -1412,7 +1458,10 @@ function buildPaydayPlan() {
     if (num(b.balance) > 0 && currentBalance(b) <= 0) return; // already paid off
     const day = Math.min(Math.max(parseInt(b.due, 10) || 1, 1), daysInMonth);
     const days = b.freq === "biweekly" ? [day, ((day + 13) % daysInMonth) + 1].sort((a, c) => a - c) : [day];
-    days.forEach(d => events.push({ bill: b, day: d, date: new Date(y, m, d) }));
+    days.forEach(d => {
+      const date = new Date(y, m, d);
+      if (date >= cutoff) events.push({ bill: b, day: d, date: date }); // skip bills already due before go-live
+    });
   });
 
   // Pay from the last check on/before the due date; bills due before the
@@ -1542,9 +1591,14 @@ function renderSchedule() {
       el("td", { attrs: { colspan: "6" }, text: "Enter each earner's biweekly paycheck and first payday to build the schedule." }),
     ]));
   } else {
+    const cutoff = planCutoffDate();
     checks.forEach(c => {
-      body.appendChild(el("tr", null, [
-        el("td", { text: dateShort(c.date) }),
+      const received = c.date < cutoff; // already happened before go-live
+      body.appendChild(el("tr", { class: received ? "check-received" : "" }, [
+        el("td", null, [
+          document.createTextNode(dateShort(c.date)),
+          received ? el("span", { class: "received-tag", text: "received" }) : null,
+        ]),
         el("td", null, [ el("span", { class: "src" + (c.isCommission ? " comm" : ""), text: c.label }) ]),
         el("td", { class: "num", text: fmt(c.amount) }),
         el("td", { class: "num", text: fmt(c.amount * pct.needs / 100) }),
@@ -2044,6 +2098,19 @@ function barNode(actual, target, max) {
 function renderPaydayPlan() {
   document.getElementById("methodAvalanche").classList.toggle("active", state.payoffMethod !== "snowball");
   document.getElementById("methodSnowball").classList.toggle("active", state.payoffMethod === "snowball");
+
+  // Go-live control: reflect the effective start date and explain the cutoff.
+  const cutoff = planCutoffDate();
+  const planFromEl = document.getElementById("planFrom");
+  if (planFromEl) planFromEl.value = state.planStart || todayStr();
+  const noteEl = document.getElementById("planFromNote");
+  if (noteEl) {
+    const { y, m } = viewYM();
+    const skipping = cutoff > new Date(y, m, 1);
+    noteEl.textContent = skipping
+      ? "Earlier checks & bills this month are already in your bank balance — projecting from " + dateShort(cutoff).replace(/^\w+, /, "") + " forward."
+      : "Projecting the full month from " + dateShort(cutoff).replace(/^\w+, /, "") + ".";
+  }
 
   const wrap = document.getElementById("paydayPlan");
   const banner = document.getElementById("paydayBanner");
@@ -2822,6 +2889,8 @@ function init() {
   document.getElementById("stmtFile").addEventListener("change", e => { const list = Array.from(e.target.files || []); e.target.value = ""; handleStatementFiles(list); });
   document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
+  document.getElementById("planFrom").addEventListener("change", e => { state.planStart = e.target.value || ""; save(); renderSchedule(); renderPaydayPlan(); });
+  document.getElementById("planFromToday").addEventListener("click", () => { state.planStart = ""; save(); renderSchedule(); renderPaydayPlan(); });
   const billsTitle = document.getElementById("billsTitle");
   billsTitle.insertBefore(svgIcon(ICON_FILE, 20), billsTitle.firstChild);
 
