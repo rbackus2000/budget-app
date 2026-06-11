@@ -638,6 +638,17 @@
   .goal-field { flex: 1 1 130px; }
   .goal-field label { font-size: .7rem; }
   .goal-del { flex-shrink: 0; align-self: center; }
+  .goal-field input[type="date"] { padding: 9px 10px; font-size: .9rem; }
+  .goal-pace { font-size: .8rem; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+  .goal-pace.overdue { color: var(--red); }
+  .goal-pace.done { color: var(--green); }
+  .goal-pace:empty { display: none; }
+  .goal-summary {
+    padding: 11px 14px; margin-bottom: 14px; border-radius: 10px; font-size: .85rem; line-height: 1.45;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+  }
+  .goal-summary.ok { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+  .goal-summary.short { background: var(--red-soft); border-color: var(--red); color: var(--red); }
   .plan-cell .plan-line { white-space: nowrap; font-size: .82rem; }
   .plan-cell .plan-line.extra { color: var(--green); font-weight: 600; }
   .plan-cell .plan-line .pl-date { color: var(--text-dim); }
@@ -1155,9 +1166,10 @@ let state = {
   payoffMethod: "avalanche", // "avalanche" (highest APR first) | "snowball" (smallest balance first)
   reportLeadDays: 2, // pay credit cards this many days before the statement closes so a low balance reports
   planStart: "", // "YYYY-MM-DD" go-live date; the payday plan projects forward from here. Empty = today (rolling).
-  goals: [],          // savings goals: { id, name, target, saved }
+  goals: [],          // savings goals: { id, name, target, saved, targetDate }
   emergencySaved: "", // current emergency-fund balance
   emergencyMonths: 3, // emergency fund target = this many months of living expenses
+  emergencyDate: "",  // optional target date to fully fund the emergency fund
 };
 
 function newEarner() {
@@ -1177,12 +1189,12 @@ function newBill() {
 }
 
 function newGoal() {
-  return { id: (state.goals.reduce((m, g) => Math.max(m, g.id), 0) + 1) || 1, name: "", target: "", saved: "" };
+  return { id: (state.goals.reduce((m, g) => Math.max(m, g.id), 0) + 1) || 1, name: "", target: "", saved: "", targetDate: "" };
 }
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3 };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "" };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1204,9 +1216,10 @@ function normalizeState() {
   if (!(num(state.reportLeadDays) > 0)) state.reportLeadDays = 2;
   if (typeof state.planStart !== "string") state.planStart = "";
   if (!Array.isArray(state.goals)) state.goals = [];
-  state.goals.forEach((g, i) => { if (g.id == null) g.id = i + 1; });
+  state.goals.forEach((g, i) => { if (g.id == null) g.id = i + 1; if (g.targetDate == null) g.targetDate = ""; });
   if (typeof state.emergencySaved !== "string") state.emergencySaved = state.emergencySaved == null ? "" : String(state.emergencySaved);
   if (!(num(state.emergencyMonths) > 0)) state.emergencyMonths = 3;
+  if (typeof state.emergencyDate !== "string") state.emergencyDate = "";
 }
 
 function save() {
@@ -2286,14 +2299,62 @@ function goalBar(saved, target) {
   return div;
 }
 
+// Required savings pace for a goal: how much per month to reach `target` by
+// `dateStr`, given what's already `saved`.
+function goalPace(saved, target, dateStr) {
+  const t = num(target);
+  if (t <= 0) return { none: true };
+  const need = Math.max(0, t - num(saved));
+  if (need <= 0) return { done: true };
+  const d = parseDate(dateStr);
+  if (!d) return { need: need, hasDate: false };
+  const ms = d - todayMidnight();
+  if (ms <= 0) return { need: need, hasDate: true, overdue: true, monthly: need, months: 0 };
+  const months = ms / (DAY_MS * 30.4375);
+  return { need: need, hasDate: true, months: months, monthly: need / months };
+}
+function paceText(p, dateStr) {
+  if (!p || p.none) return "";
+  if (p.done) return "✓ Goal reached";
+  if (!p.hasDate) return "Set a target date to get a monthly savings pace";
+  const d = parseDate(dateStr);
+  const by = d ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "";
+  if (p.overdue) return "Target date passed — " + fmt(p.need) + " still needed";
+  return "Save " + fmt(p.monthly) + "/mo to reach this by " + by + " · " + p.months.toFixed(1) + " mo left";
+}
+
+// Monthly dollars the budget plan earmarks for savings (income × savings %).
+function monthlySavingsBudget() { return totalIncome() * planBucketPercents().savings / 100; }
+
 function renderGoals() {
   const list = document.getElementById("goalsList");
   if (!list) return;
   clear(list);
 
+  // Headline: total monthly pace across dated goals vs. the plan's savings budget.
+  const summary = el("div", { class: "goal-summary" });
+  function updateSummary() {
+    let need = 0;
+    const ef = goalPace(state.emergencySaved, emergencyTarget(), state.emergencyDate);
+    if (ef.monthly) need += ef.monthly;
+    state.goals.forEach(g => { const p = goalPace(g.saved, g.target, g.targetDate); if (p.monthly) need += p.monthly; });
+    const budget = monthlySavingsBudget();
+    if (need <= 0) {
+      summary.className = "goal-summary";
+      summary.textContent = "Add a target date to a goal to see the monthly savings pace needed.";
+    } else {
+      const ok = budget >= need;
+      summary.className = "goal-summary " + (ok ? "ok" : "short");
+      summary.textContent = "Your dated goals need " + fmt(need) + "/mo. Your plan earmarks ~" + fmt(budget) + "/mo for savings — " +
+        (ok ? "✓ on track, with " + fmt(budget - need) + "/mo to spare." : "⚠ short " + fmt(need - budget) + "/mo. Push a date out, raise income, or trim a goal.");
+    }
+  }
+  list.appendChild(summary);
+
   // Emergency Fund — auto target = N × monthly living expenses (Needs bills).
   const amtEl = el("span", { class: "goal-amt" });
   const coveredEl = el("span", { class: "goal-covered" });
+  const paceEl = el("div", { class: "goal-pace" });
   const bar = goalBar(num(state.emergencySaved), emergencyTarget());
   const refreshEF = () => {
     const monthly = monthlyLivingExpenses();
@@ -2302,10 +2363,15 @@ function renderGoals() {
     amtEl.textContent = fmt(saved) + " / " + fmt(target);
     setGoalBar(bar, saved, target);
     coveredEl.textContent = monthly > 0 ? (saved / monthly).toFixed(1) + " months of living expenses covered" : "Add Needs bills to set a target";
+    const p = goalPace(saved, target, state.emergencyDate);
+    paceEl.textContent = paceText(p, state.emergencyDate);
+    paceEl.className = "goal-pace" + (p.overdue ? " overdue" : (p.done ? " done" : ""));
+    updateSummary();
   };
 
   const monthsInput = el("input", { class: "months-input", props: { type: "number", value: state.emergencyMonths, min: "1", step: "1" }, on: { input: e => { state.emergencyMonths = e.target.value; save(); refreshEF(); } } });
   const efSaved = el("input", { props: { type: "number", value: state.emergencySaved, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: e => { state.emergencySaved = e.target.value; save(); refreshEF(); } } });
+  const efDate = el("input", { props: { type: "date", value: state.emergencyDate }, on: { change: e => { state.emergencyDate = e.target.value || ""; save(); refreshEF(); } } });
   refreshEF();
 
   list.appendChild(el("div", { class: "goal-row emergency" }, [
@@ -2315,30 +2381,43 @@ function renderGoals() {
       el("span", { class: "goal-target-note" }, [ document.createTextNode("Target = "), monthsInput, document.createTextNode(" × living expenses (" + fmt(monthlyLivingExpenses()) + "/mo)") ]),
       coveredEl,
     ]),
+    paceEl,
     el("div", { class: "goal-fields" }, [
       el("div", { class: "goal-field" }, [ el("label", { text: "Saved so far" }), el("div", { class: "money-input" }, [ efSaved ]) ]),
+      el("div", { class: "goal-field" }, [ el("label", { text: "Achieve by" }), efDate ]),
     ]),
   ]));
 
-  state.goals.forEach(g => list.appendChild(goalRow(g)));
+  state.goals.forEach(g => list.appendChild(goalRow(g, updateSummary)));
 }
 
-function goalRow(g) {
+function goalRow(g, updateSummary) {
   const amtEl = el("span", { class: "goal-amt" });
+  const paceEl = el("div", { class: "goal-pace" });
   const bar = goalBar(num(g.saved), num(g.target));
-  const refresh = () => { amtEl.textContent = fmt(num(g.saved)) + " / " + fmt(num(g.target)); setGoalBar(bar, num(g.saved), num(g.target)); };
+  const refresh = () => {
+    amtEl.textContent = fmt(num(g.saved)) + " / " + fmt(num(g.target));
+    setGoalBar(bar, num(g.saved), num(g.target));
+    const p = goalPace(g.saved, g.target, g.targetDate);
+    paceEl.textContent = paceText(p, g.targetDate);
+    paceEl.className = "goal-pace" + (p.overdue ? " overdue" : (p.done ? " done" : ""));
+    if (updateSummary) updateSummary();
+  };
   refresh();
 
   const nameInput = el("input", { props: { type: "text", value: g.name }, attrs: { placeholder: "Goal name (e.g. Vacation, New car)" }, on: { input: e => { g.name = e.target.value; save(); } } });
   const targetInput = el("input", { props: { type: "number", value: g.target, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: e => { g.target = e.target.value; save(); refresh(); } } });
   const savedInput = el("input", { props: { type: "number", value: g.saved, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: e => { g.saved = e.target.value; save(); refresh(); } } });
+  const dateInput = el("input", { props: { type: "date", value: g.targetDate }, on: { change: e => { g.targetDate = e.target.value || ""; save(); refresh(); } } });
 
   return el("div", { class: "goal-row" }, [
     el("div", { class: "goal-top" }, [ nameInput, amtEl ]),
     bar,
+    paceEl,
     el("div", { class: "goal-fields" }, [
       el("div", { class: "goal-field" }, [ el("label", { text: "Target" }), el("div", { class: "money-input" }, [ targetInput ]) ]),
       el("div", { class: "goal-field" }, [ el("label", { text: "Saved" }), el("div", { class: "money-input" }, [ savedInput ]) ]),
+      el("div", { class: "goal-field" }, [ el("label", { text: "Achieve by" }), dateInput ]),
       el("button", { class: "del-btn goal-del", text: "×", title: "Remove goal", on: { click: () => { state.goals = state.goals.filter(x => x.id !== g.id); save(); renderGoals(); } } }),
     ]),
   ]);
@@ -2549,8 +2628,9 @@ function buildSnapshot() {
     payoffMethod: state.payoffMethod,
     reportLeadDays: num(state.reportLeadDays || 2),
     monthlyLivingExpenses: +monthlyLivingExpenses().toFixed(2),
-    emergencyFund: { saved: num(state.emergencySaved), targetMonths: num(state.emergencyMonths) || 3, target: +emergencyTarget().toFixed(2), monthsCovered: monthlyLivingExpenses() > 0 ? +(num(state.emergencySaved) / monthlyLivingExpenses()).toFixed(1) : null },
-    goals: state.goals.map(g => ({ name: g.name, target: num(g.target), saved: num(g.saved) })),
+    emergencyFund: (function () { const p = goalPace(state.emergencySaved, emergencyTarget(), state.emergencyDate); return { saved: num(state.emergencySaved), targetMonths: num(state.emergencyMonths) || 3, target: +emergencyTarget().toFixed(2), monthsCovered: monthlyLivingExpenses() > 0 ? +(num(state.emergencySaved) / monthlyLivingExpenses()).toFixed(1) : null, achieveBy: state.emergencyDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; })(),
+    goals: state.goals.map(g => { const p = goalPace(g.saved, g.target, g.targetDate); return { name: g.name, target: num(g.target), saved: num(g.saved), achieveBy: g.targetDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; }),
+    monthlySavingsBudget: +monthlySavingsBudget().toFixed(2),
     overallUtilizationPct: overallUtilization() == null ? null : Math.round(overallUtilization() * 100),
     bills: state.bills.map(b => {
       const util = utilization(b);
