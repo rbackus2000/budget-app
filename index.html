@@ -656,6 +656,17 @@
     .batch-action select { min-width: 0; width: 100%; }
   }
 
+  /* Delete button in the edit modal footer */
+  .modal-foot.has-delete { justify-content: space-between; }
+  .foot-right { display: flex; gap: 10px; }
+  .btn-delete {
+    padding: 10px 18px; border-radius: 999px; font-size: .9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all .15s;
+    background: transparent; border: 1px solid var(--border); color: var(--red);
+  }
+  .btn-delete:hover { background: var(--red-soft); border-color: var(--red); }
+  .btn-delete.armed { background: var(--red); border-color: var(--red); color: #fff; }
+
   /* Clickable bill name → edit */
   .bill-name-edit {
     display: inline-flex; align-items: center; gap: 6px;
@@ -1754,6 +1765,24 @@ function openBillModal(existing, prefill, aiFilled) {
     close();
   };
 
+  // Delete (editing only) — two-click confirm so it can't fire by accident.
+  let armed = false, armTimer = null;
+  const delBtn = el("button", { class: "btn-delete", text: "Delete" });
+  delBtn.addEventListener("click", () => {
+    if (!armed) {
+      armed = true;
+      delBtn.textContent = "Click again to delete";
+      delBtn.classList.add("armed");
+      armTimer = setTimeout(() => { armed = false; delBtn.textContent = "Delete"; delBtn.classList.remove("armed"); }, 3000);
+      return;
+    }
+    clearTimeout(armTimer);
+    state.bills = state.bills.filter(b => b.id !== existing.id);
+    close();
+    recalcAll(); renderBank();
+    toast((existing.name || "Item") + " deleted");
+  });
+
   const card = el("div", { class: "modal-card" }, [
     el("div", { class: "modal-head" }, [
       el("h3", { text: isEdit ? "Edit Bill or Debt" : (filled.size ? "Review Statement Details" : "Add Bill or Debt") }),
@@ -1777,9 +1806,12 @@ function openBillModal(existing, prefill, aiFilled) {
       ]),
       errEl,
     ]),
-    el("div", { class: "modal-foot" }, [
-      el("button", { class: "btn-ghost", text: "Cancel", on: { click: close } }),
-      el("button", { class: "btn-primary", text: "Save Item", on: { click: submit } }),
+    el("div", { class: "modal-foot" + (isEdit ? " has-delete" : "") }, [
+      isEdit ? delBtn : null,
+      el("div", { class: "foot-right" }, [
+        el("button", { class: "btn-ghost", text: "Cancel", on: { click: close } }),
+        el("button", { class: "btn-primary", text: "Save Item", on: { click: submit } }),
+      ]),
     ]),
   ]);
 
