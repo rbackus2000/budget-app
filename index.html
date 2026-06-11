@@ -571,7 +571,8 @@
   .payday-head .pd-amt { font-weight: 700; margin-left: auto; }
   .payday-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: .9rem; }
   .payday-row .pd-due { color: var(--text-dim); font-size: .76rem; margin-left: 8px; }
-  .payday-row.pd-extra { color: var(--green); font-weight: 600; }
+  .debt-priority { margin-top: 4px; padding: 11px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; font-size: .84rem; color: var(--text-dim); }
+  .debt-priority b { color: var(--accent); }
   .payday-row.pd-spend { color: var(--text-dim); }
   .payday-row.pd-short { color: var(--red); font-weight: 600; }
   .payday-start {
@@ -601,6 +602,42 @@
     font-weight: 700; color: var(--green); border: 1px solid var(--green);
     padding: 1px 6px; border-radius: 999px; opacity: 1; white-space: nowrap;
   }
+
+  /* "Not paid yet" checkbox list */
+  .owed-box { border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px; margin-bottom: 14px; background: var(--surface-2); }
+  .owed-title { font-size: .74rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-bottom: 9px; }
+  .owed-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; font-size: .9rem; }
+  .owed-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .owed-name { font-weight: 600; }
+  .owed-meta { color: var(--text-dim); font-size: .78rem; }
+  .owed-flag { margin-left: auto; font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--text-dim); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  .owed-flag.on { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+  .payday-row.pd-owed { color: var(--red); }
+  .payday-row.pd-owed .pd-due { color: var(--red); }
+
+  /* Per-check set-aside guidance */
+  .payday-guide { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 9px 16px; border-top: 1px dashed var(--border); font-size: .82rem; color: var(--text-dim); }
+  .payday-guide .pg-lbl { font-weight: 600; }
+  .payday-guide .pg-item b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Goals & Savings */
+  .goal-row { background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 14px 16px; margin-bottom: 12px; }
+  .goal-row.emergency { border-color: rgba(63,185,80,.4); }
+  .goal-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .goal-top input[type="text"] { font-weight: 600; max-width: 60%; }
+  .goal-name { font-weight: 700; font-size: 1rem; }
+  .goal-amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .goal-bar { height: 9px; background: var(--bg); border-radius: 999px; overflow: hidden; margin: 10px 0; }
+  .goal-bar > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+  .goal-bar > span.done { background: var(--green); }
+  .goal-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: .76rem; color: var(--text-dim); margin-bottom: 8px; }
+  .goal-target-note { display: inline-flex; align-items: center; gap: 6px; }
+  .goal-covered { color: var(--green); font-weight: 600; }
+  .months-input { width: 52px; padding: 4px 6px; font-size: .82rem; text-align: center; }
+  .goal-fields { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .goal-field { flex: 1 1 130px; }
+  .goal-field label { font-size: .7rem; }
+  .goal-del { flex-shrink: 0; align-self: center; }
   .plan-cell .plan-line { white-space: nowrap; font-size: .82rem; }
   .plan-cell .plan-line.extra { color: var(--green); font-weight: 600; }
   .plan-cell .plan-line .pl-date { color: var(--text-dim); }
@@ -949,7 +986,17 @@
     </div>
     <div class="summary-banner" id="paydayBanner">Add paychecks and bills to build your payday plan.</div>
     <div id="paydayPlan"></div>
-    <div class="hint">Each paycheck covers the bills due before the next check arrives. Whatever your budget plan earmarks for Savings &amp; Debt goes to your priority debt as an extra payment, and rolls to the next debt when one is wiped out.</div>
+    <div class="hint">Each paycheck covers the bills due before the next check arrives. The Savings and Fun amounts are what your budget plan earmarks from each check — you decide where they go: emergency fund, goals, extra debt payments, or weekly spending.</div>
+  </section>
+
+  <!-- GOALS & SAVINGS -->
+  <section class="card">
+    <div class="card-header">
+      <div class="card-title"><span>Goals &amp; Savings</span></div>
+      <button class="btn-add-item" id="addGoal"><span>+</span> Add goal</button>
+    </div>
+    <div id="goalsList"></div>
+    <div class="hint">Your emergency fund target is a multiple of your monthly living expenses (Needs bills). Add goals for anything you're saving toward — enter what you've set aside and watch each fill up.</div>
   </section>
 
   <!-- PLAN VS ACTUAL -->
@@ -1108,6 +1155,9 @@ let state = {
   payoffMethod: "avalanche", // "avalanche" (highest APR first) | "snowball" (smallest balance first)
   reportLeadDays: 2, // pay credit cards this many days before the statement closes so a low balance reports
   planStart: "", // "YYYY-MM-DD" go-live date; the payday plan projects forward from here. Empty = today (rolling).
+  goals: [],          // savings goals: { id, name, target, saved }
+  emergencySaved: "", // current emergency-fund balance
+  emergencyMonths: 3, // emergency fund target = this many months of living expenses
 };
 
 function newEarner() {
@@ -1121,13 +1171,18 @@ function newBill() {
     balance: "", payment: "", freq: "monthly", apr: "", due: "",
     creditLimit: "", // credit cards: limit, for utilization (balance ÷ limit)
     stmtDay: "",     // statement closing day of month — the balance that reports to the bureaus
+    owedNow: false,  // "still owe this" — force a past-due bill back into the plan despite go-live
     payments: [], // logged payments: { id, amount, kind: "min"|"extra", date }
   };
 }
 
+function newGoal() {
+  return { id: (state.goals.reduce((m, g) => Math.max(m, g.id), 0) + 1) || 1, name: "", target: "", saved: "" };
+}
+
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "" };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3 };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1139,6 +1194,7 @@ function normalizeState() {
     if (b.freq == null) b.freq = "monthly";
     if (b.creditLimit == null) b.creditLimit = "";
     if (b.stmtDay == null) b.stmtDay = "";
+    if (b.owedNow == null) b.owedNow = false;
   });
   if (!Array.isArray(state.earners) || !state.earners.length) state.earners = defaultEarners();
   state.earners.forEach((e, i) => { if (e.id == null) e.id = i + 1; });
@@ -1147,6 +1203,10 @@ function normalizeState() {
   if (state.payoffMethod !== "avalanche" && state.payoffMethod !== "snowball") state.payoffMethod = "avalanche";
   if (!(num(state.reportLeadDays) > 0)) state.reportLeadDays = 2;
   if (typeof state.planStart !== "string") state.planStart = "";
+  if (!Array.isArray(state.goals)) state.goals = [];
+  state.goals.forEach((g, i) => { if (g.id == null) g.id = i + 1; });
+  if (typeof state.emergencySaved !== "string") state.emergencySaved = state.emergencySaved == null ? "" : String(state.emergencySaved);
+  if (!(num(state.emergencyMonths) > 0)) state.emergencyMonths = 3;
 }
 
 function save() {
@@ -1209,7 +1269,7 @@ async function cloudLoad() {
 
 function renderAll() {
   renderIncome(); renderEarners(); renderPlans();
-  renderCategories(); renderSchedule(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit();
+  renderCategories(); renderSchedule(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit(); renderGoals();
 }
 
 /* ----------------------- DOM HELPERS (no innerHTML) --------------- */
@@ -1339,6 +1399,11 @@ const totalLoggedPayments = () => state.bills.reduce((s, b) => s + paidTotal(b),
 const currentCash = () => num(state.bank) - totalLoggedPayments();
 const projectedEOM = () => num(state.bank) + totalIncome() - totalMonthlyPayments();
 
+// Monthly "living expenses" = the monthly-equivalent of bills tagged Needs.
+// Drives the emergency-fund target (this many months of living expenses).
+const monthlyLivingExpenses = () => state.bills.reduce((s, b) => s + (b.bucket === "needs" ? monthlyPayment(b) : 0), 0);
+const emergencyTarget = () => monthlyLivingExpenses() * (num(state.emergencyMonths) || 3);
+
 // Rows whose payment panel is currently expanded (in-memory only, not persisted).
 const expanded = new Set();
 
@@ -1421,18 +1486,20 @@ function monthsToPayoff(balance, apr, payment) {
 }
 
 /* ----------------------- PAYDAY ALLOCATOR ------------------------- */
-// Debts still carrying a balance, in payoff-priority order.
-function rankedDebts() {
-  const debts = state.bills.filter(b => currentBalance(b) > 0);
+// The debt to target first if you put extra money toward debt, per the
+// selected method (avalanche = highest APR, snowball = smallest balance).
+function priorityDebt() {
+  const debts = state.bills.filter(b => b.type !== "Bill" && currentBalance(b) > 0);
+  if (!debts.length) return null;
   debts.sort((a, b) => state.payoffMethod === "snowball"
     ? currentBalance(a) - currentBalance(b)
     : (num(b.apr) - num(a.apr)) || (currentBalance(a) - currentBalance(b)));
-  return debts;
+  return debts[0];
 }
 
 // Allocate the viewed month's paychecks: each check covers the bills due
-// before the next check arrives, then routes the plan's Savings/Debt share
-// of the check as an extra payment toward the priority debt.
+// before the next check arrives. The plan's Savings and Wants slices are
+// surfaced as per-check earmarks (guidance) rather than auto-spent.
 function buildPaydayPlan() {
   const { y, m } = viewYM();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
@@ -1460,7 +1527,8 @@ function buildPaydayPlan() {
     const days = b.freq === "biweekly" ? [day, ((day + 13) % daysInMonth) + 1].sort((a, c) => a - c) : [day];
     days.forEach(d => {
       const date = new Date(y, m, d);
-      if (date >= cutoff) events.push({ bill: b, day: d, date: date }); // skip bills already due before go-live
+      if (date >= cutoff) events.push({ bill: b, day: d, date: date });
+      else if (b.owedNow) events.push({ bill: b, day: d, date: cutoff, owed: true }); // past-due but flagged unpaid → pull into the plan now
     });
   });
 
@@ -1470,62 +1538,34 @@ function buildPaydayPlan() {
     let w = null;
     for (let i = 0; i < windows.length; i++) if (windows[i].date <= ev.date) w = windows[i];
     const early = !w;
-    (w || windows[0]).bills.push({ bill: ev.bill, amount: num(ev.bill.payment), day: ev.day, early });
+    (w || windows[0]).bills.push({ bill: ev.bill, amount: num(ev.bill.payment), day: ev.day, early, owed: !!ev.owed });
   });
 
-  const savingsPct = planBucketPercents().savings / 100;
-  const debts = rankedDebts();
-  const remaining = {};
-  debts.forEach(d => { remaining[d.id] = currentBalance(d); });
+  const pct = planBucketPercents();
 
   // Thread a running checking-account balance through the month, seeded with
   // the current bank balance. Each paycheck posts to it and bills draw it down,
   // so cash on hand and surplus from earlier checks cover a lean paycheck — a
   // window is only "short" if the running balance actually goes below zero.
+  // The Savings/Wants slices are NOT auto-spent — they're shown as guidance so
+  // you decide where they go (emergency fund, goals, extra debt, fun money).
   let runBal = num(state.bank);
   windows.forEach(w => {
     w.bills.sort((a, b) => a.day - b.day);
     w.minTotal = w.bills.reduce((s, x) => s + x.amount, 0);
-    // Scheduled minimums also chip debt balances down as the month plays out.
-    w.bills.forEach(x => { if (remaining[x.bill.id] != null) remaining[x.bill.id] = Math.max(0, remaining[x.bill.id] - x.amount); });
+    w.extras = []; w.extraTotal = 0; // no auto debt routing — kept empty for planByBill
 
     w.startBalance = runBal;
     runBal += w.amount;        // paycheck posts to the bank
     runBal -= w.minTotal;      // this window's bills clear
-    w.afterBills = runBal;
     w.shortfall = runBal < 0 ? -runBal : 0;
-
-    // Earmark the plan's savings/debt share for an extra payment, but never pay
-    // out more cash than is actually on hand (keep the running balance ≥ 0).
-    let extra = Math.max(0, Math.min(w.amount * savingsPct, runBal));
-    for (let i = 0; i < debts.length && extra > 0.005; i++) {
-      const d = debts[i];
-      if (remaining[d.id] <= 0.005) continue; // paid off — roll extra to the next debt
-      const amt = Math.min(extra, remaining[d.id]);
-      w.extras.push({ bill: d, amount: amt });
-      remaining[d.id] -= amt; extra -= amt; runBal -= amt;
-    }
-    w.extraTotal = w.extras.reduce((s, x) => s + x.amount, 0);
+    w.savingsEarmark = w.amount * pct.savings / 100; // suggested toward savings/goals/debt
+    w.funEarmark = w.amount * pct.wants / 100;        // suggested fun / weekly spending
     w.endBalance = runBal;     // carries forward to the next check
   });
 
-  const totalExtra = windows.reduce((s, w) => s + w.extraTotal, 0);
-
-  // Motivation line: how much sooner the priority debt dies with this extra.
-  let boost = null;
-  if (debts.length && totalExtra > 0) {
-    const t = debts[0];
-    const extraToTarget = windows.reduce((s, w) =>
-      s + w.extras.reduce((a, x) => a + (x.bill.id === t.id ? x.amount : 0), 0), 0);
-    if (extraToTarget > 0) {
-      const base = monthsToPayoff(currentBalance(t), t.apr, monthlyPayment(t));
-      const fast = monthsToPayoff(currentBalance(t), t.apr, monthlyPayment(t) + extraToTarget);
-      if (fast != null && isFinite(fast) && (base === Infinity || (base != null && fast < base)))
-        boost = { name: t.name || "your top debt", base, fast };
-    }
-  }
-
-  return { windows, totalExtra, boost };
+  const totalSavings = windows.reduce((s, w) => s + w.savingsEarmark, 0);
+  return { windows, totalSavings };
 }
 
 // billId → planned payments [{ date, amount, kind: "min"|"extra", early }]
@@ -1967,6 +2007,7 @@ function logPayment(bill, amount, kind) {
   if (!Array.isArray(bill.payments)) bill.payments = [];
   const id = (bill.payments.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1) || 1;
   bill.payments.push({ id, amount, kind: kind === "min" ? "min" : "extra", date: new Date().toISOString() });
+  bill.owedNow = false; // a logged payment clears the "still owe this" flag
   save();
   renderBills(); renderPaydayPlan(); renderCredit(); renderBank();
 }
@@ -2124,22 +2165,14 @@ function renderPaydayPlan() {
   }
 
   // Headline. A true shortfall (running balance dips below $0) takes priority;
-  // otherwise report extra-to-debt progress, or simply that bills are covered.
+  // otherwise confirm bills are covered and point to the per-check earmarks.
   const short = plan.windows.some(w => w.shortfall > 0);
   if (short) {
     banner.className = "summary-banner over";
     banner.textContent = "Heads up — your running balance dips below $0 on a flagged check. Top up your bank balance or trim a bill.";
-  } else if (plan.totalExtra > 0) {
-    let msg = "This month's plan sends " + fmt(plan.totalExtra) + " extra to debt.";
-    if (plan.boost) {
-      msg += " " + plan.boost.name + " gone in ~" + plan.boost.fast + " months instead of " +
-        (plan.boost.base === Infinity ? "never" : "~" + plan.boost.base) + ".";
-    }
-    banner.className = "summary-banner under";
-    banner.textContent = msg;
   } else {
-    banner.className = "summary-banner";
-    banner.textContent = "Bills are covered from your balance and paychecks — no surplus for extra debt payments this month.";
+    banner.className = "summary-banner under";
+    banner.textContent = "Bills are covered. Your plan earmarks " + fmt(plan.totalSavings) + " for savings & goals this month — see each check below.";
   }
 
   // Make it explicit that the plan starts from money already in the bank.
@@ -2147,6 +2180,32 @@ function renderPaydayPlan() {
     el("span", { text: "Starting bank balance" }),
     el("span", { class: "ps-amt", text: fmt(num(state.bank)) }),
   ]));
+
+  // Bills due earlier this month (before go-live). Default assumption: already
+  // paid. Check "not paid yet" to pull one back into the plan as still-owed.
+  const { y: vy, m: vm } = viewYM();
+  const dim = new Date(vy, vm + 1, 0).getDate();
+  const pastDue = state.bills.filter(b => {
+    if (num(b.payment) <= 0) return false;
+    if (num(b.balance) > 0 && currentBalance(b) <= 0) return false;
+    const day = Math.min(Math.max(parseInt(b.due, 10) || 1, 1), dim);
+    return new Date(vy, vm, day) < cutoff;
+  });
+  if (pastDue.length) {
+    const box = el("div", { class: "owed-box" });
+    box.appendChild(el("div", { class: "owed-title", text: "Due earlier this month — check anything you haven't paid yet" }));
+    pastDue.forEach(b => {
+      const day = Math.min(Math.max(parseInt(b.due, 10) || 1, 1), dim);
+      const cb = el("input", { props: { type: "checkbox", checked: !!b.owedNow }, on: { change: e => { b.owedNow = e.target.checked; save(); renderPaydayPlan(); } } });
+      box.appendChild(el("label", { class: "owed-row" }, [
+        cb,
+        el("span", { class: "owed-name", text: b.name || "Untitled" }),
+        el("span", { class: "owed-meta", text: "due day " + day + " · " + fmt(num(b.payment)) }),
+        el("span", { class: "owed-flag" + (b.owedNow ? " on" : ""), text: b.owedNow ? "not paid yet" : "assumed paid" }),
+      ]));
+    });
+    wrap.appendChild(box);
+  }
 
   plan.windows.forEach(w => {
     const block = el("div", { class: "payday-block" });
@@ -2163,18 +2222,13 @@ function renderPaydayPlan() {
       ]));
     }
     w.bills.forEach(x => {
-      block.appendChild(el("div", { class: "payday-row" }, [
+      const due = x.owed ? "not paid yet — was due day " + x.day
+        : (x.early ? "due before this check — pay from cash on hand" : "due day " + x.day);
+      block.appendChild(el("div", { class: "payday-row" + (x.owed ? " pd-owed" : "") }, [
         el("span", null, [
           el("span", { text: x.bill.name || "Untitled" }),
-          el("span", { class: "pd-due", text: x.early ? "due before this check — pay from cash on hand" : "due day " + x.day }),
+          el("span", { class: "pd-due", text: due }),
         ]),
-        el("span", { text: fmt(x.amount) }),
-      ]));
-    });
-
-    w.extras.forEach(x => {
-      block.appendChild(el("div", { class: "payday-row pd-extra" }, [
-        el("span", { text: "Extra to " + (x.bill.name || "debt") + " ↑" }),
         el("span", { text: fmt(x.amount) }),
       ]));
     });
@@ -2191,13 +2245,103 @@ function renderPaydayPlan() {
       ]));
     }
 
+    // What your budget plan earmarks from THIS check (guidance, not auto-moved).
+    block.appendChild(el("div", { class: "payday-guide" }, [
+      el("span", { class: "pg-lbl", text: "From this check, set aside:" }),
+      el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.savingsEarmark) }), document.createTextNode(" savings & goals") ]),
+      el("span", { class: "pg-item" }, [ el("b", { text: fmt(w.funEarmark) }), document.createTextNode(" fun / weekly spending") ]),
+    ]));
+
     wrap.appendChild(block);
   });
+
+  // If they choose to put savings toward debt, point at the priority debt.
+  const pd = priorityDebt();
+  if (pd) {
+    wrap.appendChild(el("div", { class: "debt-priority" }, [
+      el("span", null, [
+        document.createTextNode("Putting savings toward debt? Target "),
+        el("b", { text: pd.name || "your priority debt" }),
+        document.createTextNode(" first (" + (state.payoffMethod === "snowball" ? "snowball — smallest balance" : "avalanche — highest APR") + ")."),
+      ]),
+    ]));
+  }
 }
 
 function setPayoffMethod(m) {
   state.payoffMethod = m;
   save(); renderBills(); renderPaydayPlan();
+}
+
+/* ----------------------- GOALS & SAVINGS -------------------------- */
+function setGoalBar(div, saved, target) {
+  const span = div.firstChild;
+  const pct = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
+  span.style.width = pct + "%";
+  span.className = (target > 0 && saved >= target) ? "done" : "";
+}
+function goalBar(saved, target) {
+  const div = el("div", { class: "goal-bar" }, [ el("span") ]);
+  setGoalBar(div, saved, target);
+  return div;
+}
+
+function renderGoals() {
+  const list = document.getElementById("goalsList");
+  if (!list) return;
+  clear(list);
+
+  // Emergency Fund — auto target = N × monthly living expenses (Needs bills).
+  const amtEl = el("span", { class: "goal-amt" });
+  const coveredEl = el("span", { class: "goal-covered" });
+  const bar = goalBar(num(state.emergencySaved), emergencyTarget());
+  const refreshEF = () => {
+    const monthly = monthlyLivingExpenses();
+    const target = emergencyTarget();
+    const saved = num(state.emergencySaved);
+    amtEl.textContent = fmt(saved) + " / " + fmt(target);
+    setGoalBar(bar, saved, target);
+    coveredEl.textContent = monthly > 0 ? (saved / monthly).toFixed(1) + " months of living expenses covered" : "Add Needs bills to set a target";
+  };
+
+  const monthsInput = el("input", { class: "months-input", props: { type: "number", value: state.emergencyMonths, min: "1", step: "1" }, on: { input: e => { state.emergencyMonths = e.target.value; save(); refreshEF(); } } });
+  const efSaved = el("input", { props: { type: "number", value: state.emergencySaved, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: e => { state.emergencySaved = e.target.value; save(); refreshEF(); } } });
+  refreshEF();
+
+  list.appendChild(el("div", { class: "goal-row emergency" }, [
+    el("div", { class: "goal-top" }, [ el("span", { class: "goal-name", text: "🛟 Emergency Fund" }), amtEl ]),
+    bar,
+    el("div", { class: "goal-meta" }, [
+      el("span", { class: "goal-target-note" }, [ document.createTextNode("Target = "), monthsInput, document.createTextNode(" × living expenses (" + fmt(monthlyLivingExpenses()) + "/mo)") ]),
+      coveredEl,
+    ]),
+    el("div", { class: "goal-fields" }, [
+      el("div", { class: "goal-field" }, [ el("label", { text: "Saved so far" }), el("div", { class: "money-input" }, [ efSaved ]) ]),
+    ]),
+  ]));
+
+  state.goals.forEach(g => list.appendChild(goalRow(g)));
+}
+
+function goalRow(g) {
+  const amtEl = el("span", { class: "goal-amt" });
+  const bar = goalBar(num(g.saved), num(g.target));
+  const refresh = () => { amtEl.textContent = fmt(num(g.saved)) + " / " + fmt(num(g.target)); setGoalBar(bar, num(g.saved), num(g.target)); };
+  refresh();
+
+  const nameInput = el("input", { props: { type: "text", value: g.name }, attrs: { placeholder: "Goal name (e.g. Vacation, New car)" }, on: { input: e => { g.name = e.target.value; save(); } } });
+  const targetInput = el("input", { props: { type: "number", value: g.target, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: e => { g.target = e.target.value; save(); refresh(); } } });
+  const savedInput = el("input", { props: { type: "number", value: g.saved, min: "0", step: "any" }, attrs: { placeholder: "0.00" }, on: { input: e => { g.saved = e.target.value; save(); refresh(); } } });
+
+  return el("div", { class: "goal-row" }, [
+    el("div", { class: "goal-top" }, [ nameInput, amtEl ]),
+    bar,
+    el("div", { class: "goal-fields" }, [
+      el("div", { class: "goal-field" }, [ el("label", { text: "Target" }), el("div", { class: "money-input" }, [ targetInput ]) ]),
+      el("div", { class: "goal-field" }, [ el("label", { text: "Saved" }), el("div", { class: "money-input" }, [ savedInput ]) ]),
+      el("button", { class: "del-btn goal-del", text: "×", title: "Remove goal", on: { click: () => { state.goals = state.goals.filter(x => x.id !== g.id); save(); renderGoals(); } } }),
+    ]),
+  ]);
 }
 
 /* ----------------------------- EXPORT ----------------------------- */
@@ -2404,6 +2548,9 @@ function buildSnapshot() {
     leftover: +(income - payments).toFixed(2),
     payoffMethod: state.payoffMethod,
     reportLeadDays: num(state.reportLeadDays || 2),
+    monthlyLivingExpenses: +monthlyLivingExpenses().toFixed(2),
+    emergencyFund: { saved: num(state.emergencySaved), targetMonths: num(state.emergencyMonths) || 3, target: +emergencyTarget().toFixed(2), monthsCovered: monthlyLivingExpenses() > 0 ? +(num(state.emergencySaved) / monthlyLivingExpenses()).toFixed(1) : null },
+    goals: state.goals.map(g => ({ name: g.name, target: num(g.target), saved: num(g.saved) })),
     overallUtilizationPct: overallUtilization() == null ? null : Math.round(overallUtilization() * 100),
     bills: state.bills.map(b => {
       const util = utilization(b);
@@ -2802,7 +2949,7 @@ function openBatchReview(list) {
 
 /* --------------------------- WIRE UP ------------------------------ */
 function recalcAll() {
-  save(); renderSchedule(); renderCategories(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit();
+  save(); renderSchedule(); renderCategories(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit(); renderGoals();
 }
 
 function shiftMonth(delta) {
@@ -2891,6 +3038,7 @@ function init() {
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
   document.getElementById("planFrom").addEventListener("change", e => { state.planStart = e.target.value || ""; save(); renderSchedule(); renderPaydayPlan(); });
   document.getElementById("planFromToday").addEventListener("click", () => { state.planStart = ""; save(); renderSchedule(); renderPaydayPlan(); });
+  document.getElementById("addGoal").addEventListener("click", () => { state.goals.push(newGoal()); save(); renderGoals(); });
   const billsTitle = document.getElementById("billsTitle");
   billsTitle.insertBefore(svgIcon(ICON_FILE, 20), billsTitle.firstChild);
 
