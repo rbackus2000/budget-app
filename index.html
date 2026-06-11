@@ -581,6 +581,15 @@
   /* Modal field hint */
   .field-hint { font-size: .72rem; color: var(--text-dim); margin-top: 6px; line-height: 1.4; }
 
+  /* Clickable bill name → edit */
+  .bill-name-edit {
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none; transition: color .15s;
+  }
+  .bill-name-edit svg { color: var(--text-dim); opacity: .55; flex-shrink: 0; transition: opacity .15s, color .15s; }
+  .bill-name-edit:hover { color: var(--accent); }
+  .bill-name-edit:hover svg { opacity: 1; color: var(--accent); }
+
   /* AI Money Coach */
   .advisor-card { border-color: rgba(123,92,255,.35); box-shadow: 0 1px 3px rgba(0,0,0,.4), 0 6px 24px rgba(123,92,255,.12); }
   .advisor-body {
@@ -1500,8 +1509,13 @@ function billRow(bill, planned) {
   const tr = el("tr", { class: "bill-row" });
   const td = (text, cls) => el("td", { class: cls || "", text: text });
 
-  // Name
-  tr.appendChild(td(bill.name || "Untitled", "col-name"));
+  // Name — clickable to edit (the Actions column scrolls off-screen on narrow
+  // views, so the name is the always-reachable edit affordance).
+  const nameLink = el("span", { class: "bill-name-edit", title: "Click to edit this item", on: { click: () => openBillModal(bill) } }, [
+    el("span", { text: bill.name || "Untitled" }),
+    svgIcon(ICON_EDIT, 13),
+  ]);
+  tr.appendChild(el("td", { class: "col-name" }, [ nameLink ]));
 
   // Type pill
   const tb = TYPE_BADGE[bill.type] || { cls: "t-bill", label: bill.type || "—" };
