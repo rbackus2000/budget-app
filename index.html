@@ -152,6 +152,13 @@
   .commission-split .cs-label b { color: var(--text); font-variant-numeric: tabular-nums; }
   .commission-split input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
   .commission-split .cs-hint { font-size: .72rem; color: var(--text-dim); margin-top: 7px; line-height: 1.45; }
+  .goals-slice-row { margin-bottom: 14px; }
+  .goals-slice-row .gs-label { font-size: .82rem; color: var(--text-dim); margin-bottom: 8px; }
+  .goals-slice-row .gs-label b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .goals-slice-row input[type="range"] { width: 100%; max-width: 460px; accent-color: var(--accent); cursor: pointer; display: block; }
+  .goals-slice-row .gs-hint { font-size: .72rem; color: var(--text-dim); margin-top: 7px; line-height: 1.45; }
+  .check-label { display: flex; align-items: center; gap: 9px; cursor: pointer; color: var(--text); font-size: .9rem; text-transform: none; letter-spacing: 0; }
+  .check-label input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
   .month-nav {
     display: flex; align-items: center; gap: 12px;
     margin-top: 20px; flex-wrap: wrap;
@@ -981,8 +988,8 @@
       <label for="commission">Commission — added to the last paycheck of the month</label>
       <div class="money-input"><input type="number" id="commission" min="0" step="any" placeholder="0.00" /></div>
       <div class="commission-split" id="commissionSplit">
-        <div class="cs-label">Of your commission: <b id="commSaveLbl">75%</b> to debt &amp; goals · <b id="commFunLbl">25%</b> fun</div>
-        <input type="range" id="commFunRange" min="0" max="100" step="5" value="25" />
+        <div class="cs-label">Of your commission: <b id="commSaveLbl">90%</b> to debt &amp; goals · <b id="commFunLbl">10%</b> fun</div>
+        <input type="range" id="commFunRange" min="0" max="100" step="5" value="10" />
         <div class="cs-hint">A commission is a windfall — bills are already covered, so most of it goes to your debt plan / goals, with a little kept for fun.</div>
       </div>
     </div>
@@ -1116,9 +1123,14 @@
       <button class="navbtn-text" id="planFromToday" title="Reset the go-live date to today">Today</button>
       <span class="plan-from-note" id="planFromNote"></span>
     </div>
+    <div class="goals-slice-row">
+      <div class="gs-label">Of your Savings each check: <b id="goalsSliceLbl">20%</b> to goals, the rest to debt</div>
+      <input type="range" id="goalsSliceRange" min="0" max="100" step="5" value="20" />
+      <div class="gs-hint">Carve a slice straight to goals so they grow even while you're paying down debt. The rest follows your debt plan.</div>
+    </div>
     <div class="summary-banner" id="paydayBanner">Add paychecks and bills to build your payday plan.</div>
     <div id="paydayPlan"></div>
-    <div class="hint">Each paycheck covers its bills first, then the Savings slice follows your debt plan — extra payments to your priority debt (avalanche or snowball). Whatever's left of Savings after debt is your goal money; once your debts are gone, the whole Savings slice flows to goals. Fun is yours to spend.</div>
+    <div class="hint">Each paycheck covers its bills first. A slice of your Savings goes straight to goals (set above), and the rest follows your debt plan — extra payments to your priority credit-card debt (avalanche or snowball). Anything left after debt also flows to goals. Auto loans and other installment debt just get their scheduled payment, not aggressive payoff. Fun is yours to spend.</div>
   </section>
 
   <!-- GOALS & SAVINGS -->
@@ -1294,7 +1306,8 @@ let state = {
   emergencySaved: "", // current emergency-fund balance
   emergencyMonths: 3, // emergency fund target = this many months of living expenses
   emergencyDate: "",  // optional target date to fully fund the emergency fund
-  commissionFunPct: 25, // % of commission kept as fun; the rest follows the debt-then-goals plan
+  commissionFunPct: 10, // % of commission kept as fun; the rest follows the debt-then-goals plan
+  goalsSlicePct: 20,  // % of the Savings slice carved straight to goals each check (rest to debt)
 };
 
 function newEarner() {
@@ -1309,6 +1322,7 @@ function newBill() {
     creditLimit: "", // credit cards: limit, for utilization (balance ÷ limit)
     stmtDay: "",     // statement closing day of month — the balance that reports to the bureaus
     owedNow: false,  // "still owe this" — force a past-due bill back into the plan despite go-live
+    extraPayoff: null, // include in aggressive extra-payment payoff? null = auto (credit cards yes, loans no)
     payments: [], // logged payments: { id, amount, kind: "min"|"extra", date }
   };
 }
@@ -1319,7 +1333,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 25 };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20 };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1345,7 +1359,8 @@ function normalizeState() {
   if (typeof state.emergencySaved !== "string") state.emergencySaved = state.emergencySaved == null ? "" : String(state.emergencySaved);
   if (!(num(state.emergencyMonths) > 0)) state.emergencyMonths = 3;
   if (typeof state.emergencyDate !== "string") state.emergencyDate = "";
-  { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 25; }
+  { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 10; }
+  { const v = parseFloat(state.goalsSlicePct); state.goalsSlicePct = (isFinite(v) && v >= 0 && v <= 100) ? v : 20; }
 }
 
 function save() {
@@ -1536,6 +1551,11 @@ function monthlyPayment(bill) {
 const paidTotal = b => (b.payments || []).reduce((s, p) => s + num(p.amount), 0);
 const currentBalance = b => Math.max(0, num(b.balance) - paidTotal(b));
 
+// Should this debt get aggressive EXTRA payments? Default (null): yes for credit
+// cards, no for installment loans (auto/mortgage/etc.) — they just get their
+// scheduled payment. An explicit true/false overrides the default.
+const isExtraPayoff = b => (b.extraPayoff == null ? b.type === "Credit Card Debt" : !!b.extraPayoff);
+
 // Account tallies.
 const totalMonthlyPayments = () => state.bills.reduce((s, b) => s + monthlyPayment(b), 0);
 const totalLoggedPayments = () => state.bills.reduce((s, b) => s + paidTotal(b), 0);
@@ -1678,13 +1698,15 @@ function buildPaydayPlan() {
   const pct = planBucketPercents();
   const savingsPct = pct.savings / 100;
 
-  // Debts (cards + loans carrying a balance), ranked by payoff method.
-  const debts = state.bills.filter(b => b.type !== "Bill" && currentBalance(b) > 0);
+  // Debts that get EXTRA payments — credit cards by default, not installment
+  // loans (auto/mortgage just get their scheduled payment). Ranked by method.
+  const debts = state.bills.filter(b => isExtraPayoff(b) && currentBalance(b) > 0);
   debts.sort((a, b) => state.payoffMethod === "snowball"
     ? currentBalance(a) - currentBalance(b)
     : (num(b.apr) - num(a.apr)) || (currentBalance(a) - currentBalance(b)));
   const remaining = {};
   debts.forEach(d => { remaining[d.id] = currentBalance(d); });
+  const goalsCarvePct = (num(state.goalsSlicePct) >= 0 ? num(state.goalsSlicePct) : 20) / 100;
 
   // Thread a running checking-account balance through the month, seeded with
   // the current bank balance. Each paycheck posts to it and bills draw it down;
@@ -1712,9 +1734,11 @@ function buildPaydayPlan() {
     w.savingsEarmark = regAmt * savingsPct + commAmt * (1 - commFun);  // savings/debt slice
     w.funEarmark = regAmt * (pct.wants / 100) + commAmt * commFun;     // fun / weekly spending
 
-    // Debt plan: route the savings slice to the priority debt, but never spend
-    // more cash than is on hand (keep the running balance ≥ 0).
-    let pool = Math.max(0, Math.min(w.savingsEarmark, runBal));
+    // Carve a goals slice off the top of Savings (always funds goals, even with
+    // debt), then route the rest to the priority debt — never spending more cash
+    // than is on hand. Any debt pool left over (debts cleared) also goes to goals.
+    const goalsCarve = w.savingsEarmark * goalsCarvePct;
+    let pool = Math.max(0, Math.min(w.savingsEarmark - goalsCarve, runBal));
     let toDebt = 0;
     for (let i = 0; i < debts.length && pool > 0.005; i++) {
       const d = debts[i];
@@ -1724,7 +1748,7 @@ function buildPaydayPlan() {
       remaining[d.id] -= amt; pool -= amt; toDebt += amt; runBal -= amt;
     }
     w.extraTotal = toDebt;
-    w.goalLeftover = Math.max(0, w.savingsEarmark - toDebt); // savings not needed for debt → goals
+    w.goalLeftover = goalsCarve + Math.max(0, pool); // carve + unspent debt pool → goals
     w.endBalance = runBal;     // carries forward to the next check
   });
 
@@ -2034,6 +2058,15 @@ function openBillModal(existing, prefill, aiFilled) {
     control,
   ]);
 
+  // Aggressive-payoff toggle. Default follows the type (cards yes, loans no);
+  // changing the type updates the default until the user sets it manually.
+  let extraTouched = draft.extraPayoff != null;
+  const extraCheck = el("input", { props: { type: "checkbox", checked: isExtraPayoff(draft) }, on: { change: e => { draft.extraPayoff = e.target.checked; extraTouched = true; } } });
+  const typeSelect = selectEl(TYPES.map(t => [t, t]), draft.type, e => {
+    draft.type = e.target.value;
+    if (!extraTouched) { draft.extraPayoff = null; extraCheck.checked = isExtraPayoff(draft); }
+  });
+
   const submit = () => {
     if (!String(draft.name).trim()) { errEl.textContent = "Item name is required."; nameInput.focus(); return; }
     if (isEdit) Object.assign(existing, draft); // preserves existing.payments
@@ -2068,12 +2101,16 @@ function openBillModal(existing, prefill, aiFilled) {
     el("div", { class: "modal-body" }, [
       filled.size ? el("div", { class: "ai-banner", text: "✨ Auto-filled from your statement — double-check the highlighted fields, then Save." }) : null,
       field("Item Name", nameInput, true, "name"),
-      field("Type", selectEl(TYPES.map(t => [t, t]), draft.type, set("type")), true, "type"),
+      field("Type", typeSelect, true, "type"),
       field("Budget Bucket", selectEl(BUCKET_OPTIONS.map(b => [b.id, b.label]), draft.bucket, set("bucket")), true, "bucket"),
       field("Current Balance Owed", moneyInput(draft.balance, set("balance")), false, "balance"),
       field("Minimum / Monthly Payment", moneyInput(draft.payment, set("payment")), true, "payment"),
       field("Payment Frequency", selectEl(FREQUENCIES.map(f => [f.id, f.label]), draft.freq || "monthly", set("freq")), false, "freq"),
       field("Annual Percentage Rate (APR %)", pctInput(draft.apr, set("apr")), false, "apr"),
+      el("div", { class: "modal-field" }, [
+        el("label", { class: "check-label" }, [ extraCheck, el("span", { text: "Attack this with extra payments" }) ]),
+        el("div", { class: "field-hint", text: "On for credit cards. Leave OFF for auto loans, mortgages, and other installment loans — those just get their scheduled monthly payment, not aggressive payoff." }),
+      ]),
       field("Due Date (Day of Month)", el("input", { props: { type: "text", value: draft.due }, attrs: { placeholder: "e.g. 15" }, on: { input: set("due") } }), false, "due"),
       field("Credit Limit (cards — for utilization)", moneyInput(draft.creditLimit, set("creditLimit")), false, "creditLimit"),
       el("div", { class: "modal-field" + (filled.has("stmtDay") ? " ai-filled" : "") }, [
@@ -2335,6 +2372,10 @@ function renderPaydayPlan() {
       ? "Earlier checks & bills this month are already in your bank balance — projecting from " + dateShort(cutoff).replace(/^\w+, /, "") + " forward."
       : "Projecting the full month from " + dateShort(cutoff).replace(/^\w+, /, "") + ".";
   }
+  const gsRange = document.getElementById("goalsSliceRange");
+  if (gsRange) gsRange.value = state.goalsSlicePct;
+  const gsLbl = document.getElementById("goalsSliceLbl");
+  if (gsLbl) gsLbl.textContent = Math.round(num(state.goalsSlicePct)) + "%";
 
   const wrap = document.getElementById("paydayPlan");
   const banner = document.getElementById("paydayBanner");
@@ -2819,7 +2860,7 @@ function buildSnapshot() {
     emergencyFund: (function () { const p = goalPace(state.emergencySaved, emergencyTarget(), state.emergencyDate); return { saved: num(state.emergencySaved), targetMonths: num(state.emergencyMonths) || 3, target: +emergencyTarget().toFixed(2), monthsCovered: monthlyLivingExpenses() > 0 ? +(num(state.emergencySaved) / monthlyLivingExpenses()).toFixed(1) : null, achieveBy: state.emergencyDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; })(),
     goals: state.goals.map(g => { const p = goalPace(g.saved, g.target, g.targetDate); return { name: g.name, target: num(g.target), saved: num(g.saved), achieveBy: g.targetDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; }),
     monthlySavingsBudget: +monthlySavingsBudget().toFixed(2),
-    debtPlan: (function () { const pl = buildPaydayPlan(); return { fundingModel: "debt first, then leftover to goals", monthlyExtraToDebt: pl ? +pl.totalExtra.toFixed(2) : 0, monthlyLeftoverForGoals: pl ? +pl.totalGoalLeftover.toFixed(2) : 0 }; })(),
+    debtPlan: (function () { const pl = buildPaydayPlan(); return { fundingModel: "extra payments target credit cards only (not installment loans like auto/mortgage); " + Math.round(num(state.goalsSlicePct)) + "% of Savings is carved to goals each check, the rest pays down cards, and leftover after cards also goes to goals", monthlyExtraToDebt: pl ? +pl.totalExtra.toFixed(2) : 0, monthlyToGoals: pl ? +pl.totalGoalLeftover.toFixed(2) : 0 }; })(),
     overallUtilizationPct: overallUtilization() == null ? null : Math.round(overallUtilization() * 100),
     bills: state.bills.map(b => {
       const util = utilization(b);
@@ -3423,6 +3464,11 @@ function init() {
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
   document.getElementById("planFrom").addEventListener("change", e => { state.planStart = e.target.value || ""; save(); renderSchedule(); renderPaydayPlan(); });
   document.getElementById("planFromToday").addEventListener("click", () => { state.planStart = ""; save(); renderSchedule(); renderPaydayPlan(); });
+  document.getElementById("goalsSliceRange").addEventListener("input", e => {
+    state.goalsSlicePct = parseFloat(e.target.value) || 0;
+    document.getElementById("goalsSliceLbl").textContent = Math.round(state.goalsSlicePct) + "%";
+    save(); renderPaydayPlan(); renderGoals(); renderHome();
+  });
   document.getElementById("addGoal").addEventListener("click", () => { state.goals.push(newGoal()); save(); renderGoals(); });
   const billsTitle = document.getElementById("billsTitle");
   billsTitle.insertBefore(svgIcon(ICON_FILE, 20), billsTitle.firstChild);
