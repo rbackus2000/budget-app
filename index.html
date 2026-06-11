@@ -588,6 +588,54 @@
   /* Modal field hint */
   .field-hint { font-size: .72rem; color: var(--text-dim); margin-top: 6px; line-height: 1.4; }
 
+  /* Bills card actions + Upload statement button */
+  .bills-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .btn-upload {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: 11px 16px; border-radius: 11px; font-size: .9rem; font-weight: 600;
+    cursor: pointer; font-family: inherit; white-space: nowrap; transition: all .15s;
+  }
+  .btn-upload:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* AI auto-fill in the bill modal */
+  .ai-banner {
+    background: rgba(123,92,255,.14); border: 1px solid rgba(123,92,255,.4);
+    color: #c9b6ff; padding: 10px 14px; border-radius: 10px; font-size: .82rem; line-height: 1.4;
+  }
+  .modal-field.ai-filled label { color: #a98bff; }
+  .modal-field.ai-filled input, .modal-field.ai-filled select {
+    border-color: rgba(139,108,255,.6); background: rgba(123,92,255,.06);
+  }
+
+  /* Loading overlay + spinner */
+  .loading-overlay {
+    position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.62);
+    backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center;
+  }
+  .loading-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px 36px; display: flex; flex-direction: column; align-items: center; gap: 16px;
+    box-shadow: var(--shadow);
+  }
+  .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--border); border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-msg { font-size: .92rem; color: var(--text); font-weight: 600; }
+
+  /* Toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 16px);
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: 12px 18px; border-radius: 11px; font-size: .88rem; max-width: 90vw;
+    box-shadow: 0 8px 28px rgba(0,0,0,.5); opacity: 0; transition: opacity .25s, transform .25s;
+    z-index: 320; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.info { border-color: rgba(123,92,255,.45); }
+
   /* Clickable bill name → edit */
   .bill-name-edit {
     display: inline-flex; align-items: center; gap: 6px;
@@ -768,8 +816,12 @@
   <section class="card">
     <div class="card-header">
       <div class="card-title" id="billsTitle"><span>Bills &amp; Debt Payoff list</span></div>
-      <button class="btn-add-item" id="addBill"><span>+</span> Add Item</button>
+      <div class="bills-actions">
+        <button class="btn-upload" id="uploadStmtBtn" title="Upload a PDF statement and let the AI fill in the details">⬆ Upload statement</button>
+        <button class="btn-add-item" id="addBill"><span>+</span> Add Item</button>
+      </div>
     </div>
+    <input type="file" id="stmtFile" accept="application/pdf" style="display:none" />
     <div class="bills-wrap">
       <table class="bills-table payoff-table">
         <thead>
@@ -1640,9 +1692,10 @@ function pctInput(value, oninput) {
   ]);
 }
 
-function openBillModal(existing) {
+function openBillModal(existing, prefill, aiFilled) {
   const isEdit = !!existing;
-  const draft = isEdit ? Object.assign({}, existing) : newBill();
+  const draft = isEdit ? Object.assign({}, existing) : Object.assign(newBill(), prefill || {});
+  const filled = new Set(aiFilled || []);
 
   const overlay = el("div", { class: "modal-overlay" });
   const close = () => {
@@ -1657,7 +1710,7 @@ function openBillModal(existing) {
   const errEl = el("div", { class: "modal-err" });
 
   const nameInput = el("input", { props: { type: "text", value: draft.name }, attrs: { placeholder: "e.g. Rent, Visa, Car loan" }, on: { input: set("name") } });
-  const field = (label, control, required) => el("div", { class: "modal-field" }, [
+  const field = (label, control, required, key) => el("div", { class: "modal-field" + (key && filled.has(key) ? " ai-filled" : "") }, [
     el("label", { text: label + (required ? " *" : "") }),
     control,
   ]);
@@ -1672,20 +1725,21 @@ function openBillModal(existing) {
 
   const card = el("div", { class: "modal-card" }, [
     el("div", { class: "modal-head" }, [
-      el("h3", { text: isEdit ? "Edit Bill or Debt" : "Add Bill or Debt" }),
+      el("h3", { text: isEdit ? "Edit Bill or Debt" : (filled.size ? "Review Statement Details" : "Add Bill or Debt") }),
       el("button", { class: "modal-close", text: "×", title: "Close", on: { click: close } }),
     ]),
     el("div", { class: "modal-body" }, [
-      field("Item Name", nameInput, true),
-      field("Type", selectEl(TYPES.map(t => [t, t]), draft.type, set("type")), true),
-      field("Budget Bucket", selectEl(BUCKET_OPTIONS.map(b => [b.id, b.label]), draft.bucket, set("bucket")), true),
-      field("Current Balance Owed", moneyInput(draft.balance, set("balance")), false),
-      field("Minimum / Monthly Payment", moneyInput(draft.payment, set("payment")), true),
-      field("Payment Frequency", selectEl(FREQUENCIES.map(f => [f.id, f.label]), draft.freq || "monthly", set("freq")), false),
-      field("Annual Percentage Rate (APR %)", pctInput(draft.apr, set("apr")), false),
-      field("Due Date (Day of Month)", el("input", { props: { type: "text", value: draft.due }, attrs: { placeholder: "e.g. 15" }, on: { input: set("due") } }), false),
-      field("Credit Limit (cards — for utilization)", moneyInput(draft.creditLimit, set("creditLimit")), false),
-      el("div", { class: "modal-field" }, [
+      filled.size ? el("div", { class: "ai-banner", text: "✨ Auto-filled from your statement — double-check the highlighted fields, then Save." }) : null,
+      field("Item Name", nameInput, true, "name"),
+      field("Type", selectEl(TYPES.map(t => [t, t]), draft.type, set("type")), true, "type"),
+      field("Budget Bucket", selectEl(BUCKET_OPTIONS.map(b => [b.id, b.label]), draft.bucket, set("bucket")), true, "bucket"),
+      field("Current Balance Owed", moneyInput(draft.balance, set("balance")), false, "balance"),
+      field("Minimum / Monthly Payment", moneyInput(draft.payment, set("payment")), true, "payment"),
+      field("Payment Frequency", selectEl(FREQUENCIES.map(f => [f.id, f.label]), draft.freq || "monthly", set("freq")), false, "freq"),
+      field("Annual Percentage Rate (APR %)", pctInput(draft.apr, set("apr")), false, "apr"),
+      field("Due Date (Day of Month)", el("input", { props: { type: "text", value: draft.due }, attrs: { placeholder: "e.g. 15" }, on: { input: set("due") } }), false, "due"),
+      field("Credit Limit (cards — for utilization)", moneyInput(draft.creditLimit, set("creditLimit")), false, "creditLimit"),
+      el("div", { class: "modal-field" + (filled.has("stmtDay") ? " ai-filled" : "") }, [
         el("label", { text: "Statement Closing Day (cards)" }),
         el("input", { props: { type: "text", value: draft.stmtDay }, attrs: { placeholder: "e.g. 3" }, on: { input: set("stmtDay") } }),
         el("div", { class: "field-hint", text: "The day your billing cycle closes — the balance on this day is what reports to the credit bureaus. Pay down before it to keep utilization low." }),
@@ -2341,6 +2395,83 @@ function sendAdvisorInput() {
   runAdvisor(text);
 }
 
+/* ------------------ STATEMENT UPLOAD (PDF → bill) ----------------- */
+function showLoading(msg) {
+  hideLoading();
+  document.body.appendChild(el("div", { class: "loading-overlay", attrs: { id: "loadingOverlay" } }, [
+    el("div", { class: "loading-box" }, [
+      el("div", { class: "spinner" }),
+      el("div", { class: "loading-msg", text: msg || "Working…" }),
+    ]),
+  ]));
+}
+function hideLoading() { const o = document.getElementById("loadingOverlay"); if (o) o.remove(); }
+
+function toast(msg, info) {
+  const t = el("div", { class: "toast" + (info ? " info" : "") , text: msg });
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, info ? 7000 : 4500);
+}
+
+// Read a File as base64 (strip the "data:...;base64," prefix).
+function readFileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => { const s = String(r.result || ""); const c = s.indexOf(","); resolve(c >= 0 ? s.slice(c + 1) : s); };
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+async function handleStatementFile(file) {
+  if (!file) return;
+  if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) { toast("Please choose a PDF statement."); return; }
+  if (file.size > 3 * 1024 * 1024) { toast("That PDF is over 3 MB — try a smaller or single-statement file."); return; }
+  if (!currentUser) { toast("Sign in first to upload statements."); return; }
+
+  let token = null;
+  try { const { data } = await sb.auth.getSession(); token = data && data.session ? data.session.access_token : null; } catch (e) {}
+  if (!token) { toast("Your session expired — sign in again."); return; }
+
+  showLoading("Reading your statement…");
+  try {
+    const pdf = await readFileBase64(file);
+    const res = await fetch("/api/extract-statement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ pdf, filename: file.name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    hideLoading();
+    if (!res.ok) { toast(data.error || "Couldn't read that statement."); return; }
+    openBillFromExtract(data.fields || {});
+  } catch (e) {
+    hideLoading();
+    toast("Couldn't read that statement. Try again or add it manually.");
+  }
+}
+
+// Map extracted fields → a bill draft and open the modal for review.
+function openBillFromExtract(f) {
+  const prefill = {};
+  const aiFilled = [];
+  const putStr = (key, val) => { if (val != null && String(val) !== "") { prefill[key] = String(val); aiFilled.push(key); } };
+
+  putStr("name", f.name);
+  if (f.accountType && TYPES.indexOf(f.accountType) >= 0) { prefill.type = f.accountType; aiFilled.push("type"); }
+  putStr("balance", f.statementBalance);
+  putStr("payment", f.minimumPayment);
+  putStr("apr", f.aprPct);
+  if (f.paymentDueDay != null) putStr("due", f.paymentDueDay);
+  putStr("creditLimit", f.creditLimit);
+  if (f.statementClosingDay != null) putStr("stmtDay", f.statementClosingDay);
+
+  if (!aiFilled.length) { toast("Couldn't pull any details from that statement — add it manually.", true); }
+  openBillModal(null, prefill, aiFilled);
+  if (f.notes) toast("Note: " + f.notes, true);
+}
+
 /* --------------------------- WIRE UP ------------------------------ */
 function recalcAll() {
   save(); renderSchedule(); renderCategories(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit();
@@ -2426,6 +2557,8 @@ function init() {
     save(); renderEarners(); recalcAll();
   });
   document.getElementById("addBill").addEventListener("click", () => openBillModal(null));
+  document.getElementById("uploadStmtBtn").addEventListener("click", () => document.getElementById("stmtFile").click());
+  document.getElementById("stmtFile").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; handleStatementFile(f); });
   document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
   const billsTitle = document.getElementById("billsTitle");
