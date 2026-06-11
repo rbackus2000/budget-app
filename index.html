@@ -636,6 +636,26 @@
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .toast.info { border-color: rgba(123,92,255,.45); }
 
+  /* Roll-cycle confirm + batch review */
+  .confirm-text { font-size: .9rem; line-height: 1.55; color: var(--text); }
+  .confirm-fields { margin-top: 12px; padding: 10px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; font-size: .82rem; color: var(--text-dim); }
+  .batch-card { max-width: 560px; }
+  .batch-list { display: flex; flex-direction: column; gap: 10px; }
+  .batch-row {
+    display: flex; gap: 14px; align-items: center; justify-content: space-between;
+    padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px;
+  }
+  .batch-main { min-width: 0; }
+  .batch-name { font-weight: 700; font-size: .95rem; }
+  .batch-sum { font-size: .76rem; color: var(--text-dim); margin-top: 3px; }
+  .batch-note { font-size: .72rem; color: #c9b6ff; margin-top: 3px; }
+  .batch-action { flex-shrink: 0; }
+  .batch-action select { min-width: 190px; }
+  @media (max-width: 540px) {
+    .batch-row { flex-direction: column; align-items: stretch; gap: 9px; }
+    .batch-action select { min-width: 0; width: 100%; }
+  }
+
   /* Clickable bill name → edit */
   .bill-name-edit {
     display: inline-flex; align-items: center; gap: 6px;
@@ -823,11 +843,11 @@
     <div class="card-header">
       <div class="card-title" id="billsTitle"><span>Bills &amp; Debt Payoff list</span></div>
       <div class="bills-actions">
-        <button class="btn-upload" id="uploadStmtBtn" title="Upload a PDF statement and let the AI fill in the details">⬆ Upload statement</button>
+        <button class="btn-upload" id="uploadStmtBtn" title="Upload one or more PDF statements — the AI fills in the details and updates cards you already have">⬆ Upload statements</button>
         <button class="btn-add-item" id="addBill"><span>+</span> Add Item</button>
       </div>
     </div>
-    <input type="file" id="stmtFile" accept="application/pdf" style="display:none" />
+    <input type="file" id="stmtFile" accept="application/pdf" multiple style="display:none" />
     <div class="bills-wrap">
       <table class="bills-table payoff-table">
         <thead>
@@ -1077,6 +1097,7 @@ function normalizeState() {
   if (!Array.isArray(state.bills)) state.bills = [];
   state.bills.forEach(b => {
     if (!Array.isArray(b.payments)) b.payments = [];
+    if (!Array.isArray(b.cycles)) b.cycles = [];
     if (b.freq == null) b.freq = "monthly";
     if (b.creditLimit == null) b.creditLimit = "";
     if (b.stmtDay == null) b.stmtDay = "";
@@ -1828,12 +1849,29 @@ function detailRow(bill) {
     bill.payments.slice().reverse().forEach(p => history.appendChild(historyRow(bill, p)));
   }
 
+  const subTitle = txt => el("div", { class: "dp-title", style: { fontSize: ".72rem", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".04em" }, text: txt });
+
   const panel = el("div", { class: "detail-panel" }, [
     el("div", { class: "dp-title", text: (bill.name || "This debt") + " — paydown" }),
     stats, progress, progressLabel, controls,
-    el("div", { class: "dp-title", style: { fontSize: ".72rem", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".04em" }, text: "Payment history" }),
+    subTitle("Payment history"),
     history,
   ]);
+
+  // Prior statement cycles (from rolling a new statement onto this bill).
+  if (bill.cycles && bill.cycles.length) {
+    panel.appendChild(subTitle("Prior statement cycles"));
+    const ch = el("div", { class: "pay-history" });
+    bill.cycles.slice().reverse().forEach(c => {
+      ch.appendChild(el("div", { class: "ph-row" }, [
+        el("span", { class: "ph-date", text: formatDate(c.closedAt) }),
+        el("span", { class: "ph-amt", text: fmt(c.statementBalance) }),
+        el("span", { class: "badge min", text: "paid " + fmt(c.paid) }),
+      ]));
+    });
+    panel.appendChild(ch);
+  }
+
   return el("tr", { class: "detail-row" }, [ el("td", { attrs: { colspan: "10" } }, [panel]) ]);
 }
 
@@ -2452,17 +2490,22 @@ function readFileBase64(file) {
   });
 }
 
-async function handleStatementFile(file) {
-  if (!file) return;
-  if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) { toast("Please choose a PDF statement."); return; }
-  if (file.size > 3 * 1024 * 1024) { toast("That PDF is over 3 MB — try a smaller or single-statement file."); return; }
-  if (!currentUser) { toast("Sign in first to upload statements."); return; }
+async function getAuthToken() {
+  try { const { data } = await sb.auth.getSession(); return data && data.session ? data.session.access_token : null; }
+  catch (e) { return null; }
+}
 
-  let token = null;
-  try { const { data } = await sb.auth.getSession(); token = data && data.session ? data.session.access_token : null; } catch (e) {}
-  if (!token) { toast("Your session expired — sign in again."); return; }
+// Run async fn over items with a small concurrency cap (don't hammer the API).
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  async function worker() { while (i < items.length) { const idx = i++; out[idx] = await fn(items[idx], idx); } }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
 
-  showLoading("Reading your statement…");
+// Extract one PDF → { ok, filename, fields } or { ok:false, filename, error }.
+async function extractOne(file, token) {
   try {
     const pdf = await readFileBase64(file);
     const res = await fetch("/api/extract-statement", {
@@ -2471,33 +2514,191 @@ async function handleStatementFile(file) {
       body: JSON.stringify({ pdf, filename: file.name }),
     });
     const data = await res.json().catch(() => ({}));
-    hideLoading();
-    if (!res.ok) { toast(data.error || "Couldn't read that statement."); return; }
-    openBillFromExtract(data.fields || {});
+    if (!res.ok) return { ok: false, filename: file.name, error: data.error || "Couldn't read." };
+    return { ok: true, filename: file.name, fields: data.fields || {} };
   } catch (e) {
-    hideLoading();
-    toast("Couldn't read that statement. Try again or add it manually.");
+    return { ok: false, filename: file.name, error: "Couldn't read." };
   }
 }
 
-// Map extracted fields → a bill draft and open the modal for review.
+async function handleStatementFiles(fileList) {
+  let files = Array.from(fileList || []);
+  const tooBig = files.filter(f => f.size > 3 * 1024 * 1024);
+  files = files.filter(f => (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) && f.size <= 3 * 1024 * 1024);
+  if (tooBig.length) toast(tooBig.length + " file" + (tooBig.length === 1 ? "" : "s") + " over 3 MB skipped.");
+  if (!files.length) { toast("Choose one or more PDF statements (under 3 MB each)."); return; }
+  if (!currentUser) { toast("Sign in first to upload statements."); return; }
+
+  const token = await getAuthToken();
+  if (!token) { toast("Your session expired — sign in again."); return; }
+
+  showLoading(files.length > 1 ? ("Reading " + files.length + " statements…") : "Reading your statement…");
+  const results = await mapLimit(files, 3, f => extractOne(f, token));
+  hideLoading();
+
+  const ok = results.filter(r => r.ok);
+  const failed = results.filter(r => !r.ok);
+
+  if (files.length === 1) {
+    if (!ok.length) { toast((failed[0] && failed[0].error) || "Couldn't read that statement."); return; }
+    routeSingle(ok[0].fields);
+    return;
+  }
+  if (failed.length) toast(failed.length + " statement" + (failed.length === 1 ? "" : "s") + " couldn't be read and were skipped.");
+  if (!ok.length) return;
+  openBatchReview(ok.map(r => r.fields));
+}
+
+// Normalize a name for matching (lowercase, strip punctuation/extra spaces).
+function normName(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+
+// Find an existing bill that this statement likely belongs to (by name).
+function matchExistingBill(f) {
+  const n = normName(f.name);
+  if (!n) return null;
+  return state.bills.find(b => {
+    const bn = normName(b.name);
+    return bn && (bn === n || bn.indexOf(n) >= 0 || n.indexOf(bn) >= 0);
+  }) || null;
+}
+
+// Extracted fields → bill draft (string values matching the bill model).
+function extractToDraft(f) {
+  const d = {};
+  if (f.name) d.name = String(f.name);
+  if (f.accountType && TYPES.indexOf(f.accountType) >= 0) d.type = f.accountType;
+  if (f.statementBalance != null) d.balance = String(f.statementBalance);
+  if (f.minimumPayment != null) d.payment = String(f.minimumPayment);
+  if (f.aprPct != null) d.apr = String(f.aprPct);
+  if (f.paymentDueDay != null) d.due = String(f.paymentDueDay);
+  if (f.creditLimit != null) d.creditLimit = String(f.creditLimit);
+  if (f.statementClosingDay != null) d.stmtDay = String(f.statementClosingDay);
+  return d;
+}
+
+function summaryLine(f) {
+  const parts = [];
+  if (f.statementBalance != null) parts.push("Balance " + fmt(num(f.statementBalance)));
+  if (f.minimumPayment != null) parts.push("min " + fmt(num(f.minimumPayment)));
+  if (f.statementClosingDay != null) parts.push("closes day " + f.statementClosingDay);
+  if (f.paymentDueDay != null) parts.push("due day " + f.paymentDueDay);
+  if (f.creditLimit != null) parts.push("limit " + fmt(num(f.creditLimit)));
+  return parts.join(" · ") || "No figures detected";
+}
+
+// Recurring: roll an existing bill onto a new statement. The closing cycle's
+// balance + logged payments are archived to bill.cycles (non-lossy), then the
+// new statement's figures replace the live values and the cycle starts fresh.
+function rollCycle(bill, f) {
+  bill.cycles = bill.cycles || [];
+  bill.cycles.push({
+    closedAt: new Date().toISOString(),
+    statementBalance: num(bill.balance),
+    paid: paidTotal(bill),
+    endingBalance: currentBalance(bill),
+    stmtDay: bill.stmtDay, due: bill.due,
+  });
+  const d = extractToDraft(f);
+  ["balance", "payment", "apr", "due", "creditLimit", "stmtDay", "type"].forEach(k => {
+    if (d[k] != null) bill[k] = d[k];
+  });
+  bill.payments = []; // new cycle — paydown tracking restarts against the new balance
+}
+
+// Single upload: matched → ask to roll the cycle; otherwise open the editable modal.
+function routeSingle(f) {
+  const match = matchExistingBill(f);
+  if (match) confirmRollOrNew(f, match);
+  else openBillFromExtract(f);
+}
+
+// Map extracted fields → a pre-filled, editable Add Item modal for review.
 function openBillFromExtract(f) {
-  const prefill = {};
-  const aiFilled = [];
-  const putStr = (key, val) => { if (val != null && String(val) !== "") { prefill[key] = String(val); aiFilled.push(key); } };
-
-  putStr("name", f.name);
-  if (f.accountType && TYPES.indexOf(f.accountType) >= 0) { prefill.type = f.accountType; aiFilled.push("type"); }
-  putStr("balance", f.statementBalance);
-  putStr("payment", f.minimumPayment);
-  putStr("apr", f.aprPct);
-  if (f.paymentDueDay != null) putStr("due", f.paymentDueDay);
-  putStr("creditLimit", f.creditLimit);
-  if (f.statementClosingDay != null) putStr("stmtDay", f.statementClosingDay);
-
-  if (!aiFilled.length) { toast("Couldn't pull any details from that statement — add it manually.", true); }
+  const prefill = extractToDraft(f);
+  const aiFilled = Object.keys(prefill);
+  if (!aiFilled.length) toast("Couldn't pull any details from that statement — add it manually.", true);
   openBillModal(null, prefill, aiFilled);
   if (f.notes) toast("Note: " + f.notes, true);
+}
+
+function confirmRollOrNew(f, match) {
+  const overlay = el("div", { class: "modal-overlay" });
+  const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); };
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+
+  const card = el("div", { class: "modal-card" }, [
+    el("div", { class: "modal-head" }, [
+      el("h3", { text: "Update existing card?" }),
+      el("button", { class: "modal-close", text: "×", title: "Close", on: { click: close } }),
+    ]),
+    el("div", { class: "modal-body" }, [
+      el("p", { class: "confirm-text" }, [
+        document.createTextNode("This statement looks like your existing "),
+        el("b", { text: match.name || "bill" }),
+        document.createTextNode(". Rolling to the new cycle updates the balance, dates, and limit to this statement and clears this cycle's logged payments (kept in history)."),
+      ]),
+      el("div", { class: "confirm-fields", text: summaryLine(f) }),
+    ]),
+    el("div", { class: "modal-foot" }, [
+      el("button", { class: "btn-ghost", text: "Add as new instead", on: { click: () => { close(); openBillFromExtract(f); } } }),
+      el("button", { class: "btn-primary", text: "Update " + (match.name || "card"), on: { click: () => { rollCycle(match, f); close(); recalcAll(); renderBank(); toast((match.name || "Card") + " rolled to the new statement"); } } }),
+    ]),
+  ]);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+}
+
+function openBatchReview(list) {
+  const overlay = el("div", { class: "modal-overlay" });
+  const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); };
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+
+  const items = list.map(f => { const match = matchExistingBill(f); return { f, match, action: match ? "update" : "new" }; });
+
+  const rows = el("div", { class: "batch-list" });
+  items.forEach(it => {
+    const opts = [];
+    if (it.match) opts.push(["update", "Update " + (it.match.name || "existing") + " — roll cycle"]);
+    opts.push(["new", "Add as new bill"]);
+    opts.push(["skip", "Skip"]);
+    rows.appendChild(el("div", { class: "batch-row" }, [
+      el("div", { class: "batch-main" }, [
+        el("div", { class: "batch-name", text: it.f.name || "Untitled statement" }),
+        el("div", { class: "batch-sum", text: summaryLine(it.f) }),
+        it.f.notes ? el("div", { class: "batch-note", text: "Note: " + it.f.notes }) : null,
+      ]),
+      el("div", { class: "batch-action" }, [ selectEl(opts, it.action, e => { it.action = e.target.value; }) ]),
+    ]));
+  });
+
+  const saveAll = () => {
+    let added = 0, updated = 0, skipped = 0;
+    items.forEach(it => {
+      if (it.action === "skip") { skipped++; return; }
+      if (it.action === "update" && it.match) { rollCycle(it.match, it.f); updated++; }
+      else { state.bills.push(Object.assign(newBill(), extractToDraft(it.f))); added++; }
+    });
+    close();
+    recalcAll(); renderBank();
+    toast("Saved — " + added + " added, " + updated + " updated" + (skipped ? ", " + skipped + " skipped" : ""), true);
+  };
+
+  const card = el("div", { class: "modal-card batch-card" }, [
+    el("div", { class: "modal-head" }, [
+      el("h3", { text: "Review " + items.length + " Statements" }),
+      el("button", { class: "modal-close", text: "×", title: "Close", on: { click: close } }),
+    ]),
+    el("div", { class: "modal-body" }, [
+      el("div", { class: "ai-banner", text: "✨ Auto-filled from your statements. Pick an action for each, then Save all — you can fine-tune any bill afterward with its edit pencil." }),
+      rows,
+    ]),
+    el("div", { class: "modal-foot" }, [
+      el("button", { class: "btn-ghost", text: "Cancel", on: { click: close } }),
+      el("button", { class: "btn-primary", text: "Save all", on: { click: saveAll } }),
+    ]),
+  ]);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 /* --------------------------- WIRE UP ------------------------------ */
@@ -2586,7 +2787,7 @@ function init() {
   });
   document.getElementById("addBill").addEventListener("click", () => openBillModal(null));
   document.getElementById("uploadStmtBtn").addEventListener("click", () => document.getElementById("stmtFile").click());
-  document.getElementById("stmtFile").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; handleStatementFile(f); });
+  document.getElementById("stmtFile").addEventListener("change", e => { const list = Array.from(e.target.files || []); e.target.value = ""; handleStatementFiles(list); });
   document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
   const billsTitle = document.getElementById("billsTitle");
