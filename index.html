@@ -600,6 +600,7 @@
     font-size: .95rem; line-height: 1; padding: 0; transition: all .15s; flex-shrink: 0;
   }
   .pd-push:hover { border-color: var(--accent); color: var(--accent); }
+  .pd-paidoff { color: var(--green); font-weight: 700; }
   .payday-row.pd-spend { color: var(--text-dim); }
   .payday-row.pd-short { color: var(--red); font-weight: 600; }
   .payday-row.pd-carry { color: var(--text-dim); font-size: .82rem; }
@@ -1783,10 +1784,17 @@ function buildPaydayPlan() {
   let runBal = num(state.bank);
   windows.forEach(w => {
     w.bills.sort((a, b) => a.date - b.date);
-    w.minTotal = w.bills.reduce((s, x) => s + (x.paid ? 0 : x.amount), 0); // only UNPAID bills draw the balance
     w.extras = [];
-    // Scheduled minimums also chip debt balances down as the plan plays out.
-    w.bills.forEach(x => { if (remaining[x.bill.id] != null) remaining[x.bill.id] = Math.max(0, remaining[x.bill.id] - x.amount); });
+    // Chip each debt's balance by its scheduled minimum as the plan plays out.
+    // Once the plan has already cleared a debt (balance ≤ 0), no minimum is owed
+    // on it — mark it "paid off" so it stops reappearing in later weeks.
+    w.bills.forEach(x => {
+      const rid = x.bill.id;
+      if (remaining[rid] == null) return;
+      if (remaining[rid] <= 0.005) { x.paidOff = true; return; }
+      remaining[rid] = Math.max(0, remaining[rid] - x.amount);
+    });
+    w.minTotal = w.bills.reduce((s, x) => s + ((x.paid || x.paidOff) ? 0 : x.amount), 0); // paid/paid-off don't draw
 
     w.startBalance = runBal;
     runBal += w.amount;        // paycheck posts to the bank
@@ -2510,6 +2518,19 @@ function renderPaydayPlan() {
       ]));
     }
     w.bills.forEach(x => {
+      // A debt the plan already cleared shows as a greyed "paid off" line — no
+      // minimum is owed, no checkbox or push.
+      if (x.paidOff) {
+        block.appendChild(el("div", { class: "payday-row pd-bill is-paid" }, [
+          el("div", { class: "pd-bill-left" }, [
+            el("span", { class: "pd-paidoff", text: "✓" }),
+            el("span", { text: x.bill.name || "Untitled" }),
+            el("span", { class: "pd-due", text: "paid off — no payment due" }),
+          ]),
+          el("span", { class: "pd-amt-v", text: "—" }),
+        ]));
+        return;
+      }
       const due = x.paid ? "✓ paid"
         : x.deferred ? "pushed here · was due day " + x.day
         : x.early ? "due day " + x.day + " — pay from cash on hand"
