@@ -591,6 +591,15 @@
   .pd-bill-left input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; flex-shrink: 0; }
   .payday-row.pd-bill.is-paid { opacity: .5; }
   .payday-row.pd-bill.is-paid .pd-due { color: var(--green); }
+  .payday-row.pd-bill.is-deferred .pd-due { color: var(--accent); }
+  .pd-bill-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .pd-amt-v { font-variant-numeric: tabular-nums; }
+  .pd-push {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-dim);
+    width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-family: inherit;
+    font-size: .95rem; line-height: 1; padding: 0; transition: all .15s; flex-shrink: 0;
+  }
+  .pd-push:hover { border-color: var(--accent); color: var(--accent); }
   .payday-row.pd-spend { color: var(--text-dim); }
   .payday-row.pd-short { color: var(--red); font-weight: 600; }
   .payday-start {
@@ -1324,6 +1333,7 @@ function newBill() {
     stmtDay: "",     // statement closing day of month — the balance that reports to the bureaus
     extraPayoff: null, // include in aggressive extra-payment payoff? null = auto (credit cards yes, loans no)
     paid: {},        // { "YYYY-MM": true } — months this bill's payment is marked paid (excluded from the plan)
+    defer: {},       // { "YYYY-MM-DD": n } — push this occurrence n paychecks later than its due date
     payments: [], // logged payments: { id, amount, kind: "min"|"extra", date }
   };
 }
@@ -1347,6 +1357,7 @@ function normalizeState() {
     if (b.creditLimit == null) b.creditLimit = "";
     if (b.stmtDay == null) b.stmtDay = "";
     if (!b.paid || typeof b.paid !== "object") b.paid = {};
+    if (!b.defer || typeof b.defer !== "object") b.defer = {};
   });
   if (!Array.isArray(state.earners) || !state.earners.length) state.earners = defaultEarners();
   state.earners.forEach((e, i) => { if (e.id == null) e.id = i + 1; });
@@ -1537,6 +1548,8 @@ const totalIncome = () => buildSchedule().reduce((s, c) => s + c.amount, 0);
 
 // Year-month key for a date, e.g. "2026-06".
 function ymKey(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+// Full date key, e.g. "2026-06-15".
+function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function billPaidOn(b, date) { return !!(b.paid && b.paid[ymKey(date)]); }
 
 // Every biweekly payday from firstPay that falls within [start, end].
@@ -1727,19 +1740,23 @@ function buildPaydayPlan() {
       days.forEach(d => {
         const date = new Date(yy, mm, d);
         if (date > horizonEnd) return;
-        events.push({ bill: b, day: d, date: date, monthKey: mk, paid: paid });
+        const dk = ymd(date);
+        events.push({ bill: b, day: d, date: date, monthKey: mk, dateKey: dk, paid: paid, deferCount: (b.defer && b.defer[dk]) || 0 });
       });
       mDate = new Date(yy, mm + 1, 1);
     }
   });
 
   // Pay each bill from the last check on/before its due date; a bill due before
-  // the first upcoming check falls to it (pay from cash on hand).
+  // the first upcoming check falls to it. "defer" pushes it that many paychecks
+  // later (clamped to the last window).
   events.forEach(ev => {
-    let w = null;
-    for (let i = 0; i < windows.length; i++) if (windows[i].date <= ev.date) w = windows[i];
-    const early = !w;
-    (w || windows[0]).bills.push({ bill: ev.bill, amount: num(ev.bill.payment), day: ev.day, date: ev.date, monthKey: ev.monthKey, paid: ev.paid, early: early });
+    let idx = -1;
+    for (let i = 0; i < windows.length; i++) if (windows[i].date <= ev.date) idx = i;
+    const early = idx < 0;
+    const base = early ? 0 : idx;
+    const targetIdx = Math.min(base + (ev.deferCount || 0), windows.length - 1);
+    windows[targetIdx].bills.push({ bill: ev.bill, amount: num(ev.bill.payment), day: ev.day, date: ev.date, monthKey: ev.monthKey, dateKey: ev.dateKey, paid: ev.paid, early: early, deferred: (ev.deferCount || 0) > 0 });
   });
 
   const pct = planBucketPercents();
@@ -2479,19 +2496,36 @@ function renderPaydayPlan() {
       ]));
     }
     w.bills.forEach(x => {
-      const due = x.paid ? "✓ paid" : (x.early ? "due day " + x.day + " — pay from cash on hand" : "due day " + x.day);
+      const due = x.paid ? "✓ paid"
+        : x.deferred ? "pushed here · was due day " + x.day
+        : x.early ? "due day " + x.day + " — pay from cash on hand"
+        : "due day " + x.day;
       const cb = el("input", { props: { type: "checkbox", checked: !!x.paid }, attrs: { title: "Mark paid" }, on: { change: e => {
         const b = x.bill; if (!b.paid || typeof b.paid !== "object") b.paid = {};
         if (e.target.checked) b.paid[x.monthKey] = true; else delete b.paid[x.monthKey];
         save(); renderPaydayPlan(); renderHome();
       } } });
-      block.appendChild(el("label", { class: "payday-row pd-bill" + (x.paid ? " is-paid" : "") }, [
-        el("span", { class: "pd-bill-left" }, [
+      const right = el("div", { class: "pd-bill-right" }, [ el("span", { class: "pd-amt-v", text: fmt(x.amount) }) ]);
+      if (!x.paid) {
+        right.appendChild(el("button", { class: "pd-push", title: "Push to the next paycheck", text: "→", on: { click: () => {
+          const b = x.bill; if (!b.defer || typeof b.defer !== "object") b.defer = {};
+          b.defer[x.dateKey] = (b.defer[x.dateKey] || 0) + 1;
+          save(); renderPaydayPlan(); renderHome();
+        } } }));
+      }
+      if (x.deferred) {
+        right.appendChild(el("button", { class: "pd-push", title: "Move back to its due date", text: "↩", on: { click: () => {
+          const b = x.bill; if (b.defer) delete b.defer[x.dateKey];
+          save(); renderPaydayPlan(); renderHome();
+        } } }));
+      }
+      block.appendChild(el("div", { class: "payday-row pd-bill" + (x.paid ? " is-paid" : "") + (x.deferred ? " is-deferred" : "") }, [
+        el("div", { class: "pd-bill-left" }, [
           cb,
           el("span", { text: x.bill.name || "Untitled" }),
           el("span", { class: "pd-due", text: due }),
         ]),
-        el("span", { text: fmt(x.amount) }),
+        right,
       ]));
     });
 
