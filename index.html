@@ -706,6 +706,12 @@
   .credit-action .cc-date { color: var(--accent); font-weight: 600; }
   .credit-action .cc-soon { color: var(--red); font-weight: 700; }
   .credit-meta { font-size: .74rem; color: var(--text-dim); margin-top: 4px; }
+  .credit-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
+  .btn-pay.sm { padding: 7px 13px; font-size: .78rem; }
+
+  /* Discoverable "log payment" link under a debt's balance */
+  .log-pay-link { font-size: .7rem; color: var(--accent); cursor: pointer; margin-top: 4px; user-select: none; white-space: nowrap; }
+  .log-pay-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -1598,15 +1604,19 @@ function billRow(bill, planned) {
   // Balance owed (remaining) — clickable to expand the payment panel for debts
   const balCell = el("td", { class: "num" });
   if (num(bill.balance) > 0) {
-    const link = el("span", { class: "bal-link" + (expanded.has(bill.id) ? " open" : ""), title: "Track payments" }, [
+    const toggle = () => {
+      if (expanded.has(bill.id)) expanded.delete(bill.id); else expanded.add(bill.id);
+      renderBills();
+    };
+    const open = expanded.has(bill.id);
+    const link = el("span", { class: "bal-link" + (open ? " open" : ""), title: "Log payments / track paydown" }, [
       el("span", { text: fmt(currentBalance(bill)) }),
       el("span", { class: "caret", text: "›" }),
     ]);
-    link.addEventListener("click", () => {
-      if (expanded.has(bill.id)) expanded.delete(bill.id); else expanded.add(bill.id);
-      renderBills();
-    });
+    link.addEventListener("click", toggle);
     balCell.appendChild(link);
+    // Always-visible affordance so logging a payment is discoverable.
+    balCell.appendChild(el("div", { class: "log-pay-link", text: open ? "Hide payments" : "＋ Log payment", on: { click: toggle } }));
   } else {
     balCell.appendChild(document.createTextNode("—"));
   }
@@ -1834,13 +1844,13 @@ function logPayment(bill, amount, kind) {
   const id = (bill.payments.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1) || 1;
   bill.payments.push({ id, amount, kind: kind === "min" ? "min" : "extra", date: new Date().toISOString() });
   save();
-  renderBills(); renderPaydayPlan();
+  renderBills(); renderPaydayPlan(); renderCredit(); renderBank();
 }
 
 function deletePayment(bill, pid) {
   bill.payments = (bill.payments || []).filter(p => p.id !== pid);
   save();
-  renderBills(); renderPaydayPlan();
+  renderBills(); renderPaydayPlan(); renderCredit(); renderBank();
 }
 
 function renderBillTotals() {
@@ -2212,6 +2222,24 @@ function renderCredit() {
       "Balance " + fmt(bal) + " of " + fmt(limit) + " limit" +
       (close ? " · closes " + dateShort(close).replace(/^\w+, /, "") : "") +
       (card.due ? " · payment due day " + card.due : "") }));
+
+    // One-click logging so the balance + utilization update when you actually pay.
+    if (bal > 0) {
+      const acts = el("div", { class: "credit-actions" });
+      if (card.stmtDay && payDown > 0) {
+        acts.appendChild(el("button", {
+          class: "btn-pay sm", title: "Log this as an extra payment toward the card",
+          text: "✓ I paid " + fmt(payDown),
+          on: { click: () => { logPayment(card, payDown, "extra"); toast("Logged " + fmt(payDown) + " to " + (card.name || "card") + " — undo in the payments panel"); } },
+        }));
+      }
+      acts.appendChild(el("button", {
+        class: "btn-pay ghost sm",
+        text: "Paid in full (" + fmt(bal) + ")",
+        on: { click: () => { logPayment(card, bal, "extra"); toast((card.name || "Card") + " marked paid in full"); } },
+      }));
+      row.appendChild(acts);
+    }
 
     list.appendChild(row);
   });
