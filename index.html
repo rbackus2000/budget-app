@@ -1164,7 +1164,7 @@
       <button class="btn-add-item" id="simulateBtn"><span>✦</span> Simulate</button>
     </div>
     <div id="simResults"></div>
-    <div class="hint">Estimates how paying your cards down would move your score, based on utilization. AI estimate from your real balances and limits — not a guarantee. Lowering reported utilization is one of the fastest ways to raise a score.</div>
+    <div class="hint">The score sweet spot is <b>low single-digit utilization (about 1–9%), not 0%</b> — keep one card reporting a small balance and the rest at $0 (the "AZEO" approach). Under 30% avoids damage; under 10% is excellent. Paying a card to $0 still saves interest and is fine — it just doesn't beat a tiny reported balance for your score. AI estimate from your real balances and limits, not a guarantee.</div>
   </section>
 
   <!-- PAYDAY PLAN -->
@@ -3409,9 +3409,9 @@ function creditScenarios() {
     return { key: key, label: label, utilPct: Math.round(targetUtil * 100), payDown: +Math.max(0, totalBal - targetBal).toFixed(2) };
   };
   const list = [
-    mk("payoff", "Pay off all cards", 0),
-    mk("to10", "Pay all down to 10%", 0.10),
-    mk("to30", "Pay all down to 30%", 0.30),
+    mk("payoff", "Pay off completely (0%)", 0),
+    mk("sweet", "Pay all to ~9% (score sweet spot)", 0.09),
+    mk("to30", "Pay all down to ~30%", 0.30),
   ].filter(s => s.payDown > 0.5);
   return { currentUtilPct: Math.round(curUtil * 100), totalBal: totalBal, totalLimit: totalLimit, scenarios: list };
 }

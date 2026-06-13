@@ -47,14 +47,15 @@ const SYSTEM_PROMPT = `You estimate the impact of credit-card paydown on a FICO 
 
 Given the person's current score and a set of scenarios (each with the resulting overall card utilization), estimate the likely score for each scenario as a realistic RANGE.
 
-Rules and reasoning:
+Rules and reasoning (these reflect how FICO actually treats utilization):
 - ONLY utilization changes between scenarios. Payment history, credit age, credit mix, and inquiries are held constant.
 - Utilization is roughly 30% of a FICO score and is the fastest-moving factor.
-- Gains from lowering utilization are LARGER when current utilization is high and the score is being held down by it. Someone at 70% utilization paying to 10% can jump a lot; someone already at 8% paying to 0% barely moves.
-- Diminishing returns: under 30% helps, under 10% helps more, ~1-9% is roughly optimal; 0% across all cards is slightly worse than a tiny reported balance but still good.
-- A score already near the top (780+) has little room to rise regardless.
-- Keep ranges realistic and modest — utilization changes typically move a suppressed score by tens of points, not hundreds. Never exceed 850 or go below 300.
-- Return one entry per input scenario, keyed exactly by its "key". Add a one-line rationale each.
+- The score SWEET SPOT is LOW SINGLE DIGITS (about 1-9% overall), NOT 0%. Under 30% avoids significant damage; under 10% is where exceptional scores sit; ~1-9% is optimal.
+- 0% utilization across ALL cards gives NO extra benefit over low single digits and can be marginally WORSE: some FICO versions apply a small "no recent revolving activity" penalty, and unused cards risk being closed or limit-cut (which RAISES utilization). So estimate a 0% (pay-off-everything) scenario as roughly EQUAL TO, or a few points BELOW, a ~1-9% scenario — never meaningfully higher than the single-digit scenario.
+- Best practice is AZEO ("All Zero Except One"): one card reports a small balance (1-9%), the rest report $0.
+- Gains are LARGER when current utilization is high and suppressing the score; someone at 70% paying to single digits can jump a lot. A score already near the top (780+) has little room to rise.
+- Diminishing returns as you approach the sweet spot. Keep ranges realistic and modest — utilization changes move a suppressed score by tens of points, not hundreds. Never exceed 850 or go below 300.
+- Return one entry per input scenario, keyed exactly by its "key". In the rationale, when a scenario is 0% across all cards, briefly note it's no better (and maybe slightly worse) than keeping a small balance.
 - These are estimates; real scoring is proprietary and depends on the full credit file.`;
 
 function sendJSON(res, status, obj) {
