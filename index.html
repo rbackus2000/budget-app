@@ -961,6 +961,10 @@
   .report-empty { color: var(--text-dim); font-size: .9rem; line-height: 1.55; }
   .report-analysis .md h3 { color: var(--accent); }
   .report-privacy { color: var(--text-dim); }
+  .report-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .report-date { font-size: .8rem; color: var(--text-dim); }
+  .report-actions { display: flex; gap: 8px; }
+  .btn-export.sm { padding: 7px 13px; font-size: .8rem; }
   .credit-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
   .btn-pay.sm { padding: 7px 13px; font-size: .78rem; }
 
@@ -1392,6 +1396,7 @@ let state = {
   commissionFunPct: 10, // % of commission kept as fun; the rest follows the debt-then-goals plan
   goalsSlicePct: 20,  // % of the Savings slice carved straight to goals each check (rest to debt)
   creditScore: "",    // current credit score, for the score simulator
+  creditReport: { markdown: "", date: "" }, // saved AI credit-report analysis so it persists
 };
 
 function newEarner() {
@@ -1418,7 +1423,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, creditScore: "" };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, creditScore: "", creditReport: { markdown: "", date: "" } };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1448,6 +1453,7 @@ function normalizeState() {
   { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 10; }
   { const v = parseFloat(state.goalsSlicePct); state.goalsSlicePct = (isFinite(v) && v >= 0 && v <= 100) ? v : 20; }
   if (typeof state.creditScore !== "string") state.creditScore = state.creditScore == null ? "" : String(state.creditScore);
+  if (!state.creditReport || typeof state.creditReport !== "object") state.creditReport = { markdown: "", date: "" };
 }
 
 function save() {
@@ -1510,7 +1516,7 @@ async function cloudLoad() {
 
 function renderAll() {
   renderIncome(); renderEarners(); renderPlans();
-  renderCategories(); renderSchedule(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit(); renderGoals(); renderHome();
+  renderCategories(); renderSchedule(); renderBills(); renderCompare(); renderPaydayPlan(); renderCredit(); renderGoals(); renderHome(); renderCreditReport();
 }
 
 /* ----------------------- DOM HELPERS (no innerHTML) --------------- */
@@ -3602,10 +3608,55 @@ async function handleCreditReports(fileList) {
 }
 
 function renderReportAnalysis(markdown) {
+  if (!markdown) { toast("No analysis returned — try again."); return; }
+  const d = new Date();
+  state.creditReport = { markdown: markdown, date: d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) };
+  save();
+  renderCreditReport();
+}
+
+// Render the saved analysis (persists across sessions) with date + export.
+function renderCreditReport() {
   const body = document.getElementById("reportBody");
+  if (!body) return;
   clear(body);
-  if (!markdown) { body.appendChild(el("div", { class: "report-empty", text: "No analysis returned — try again." })); return; }
-  body.appendChild(el("div", { class: "report-analysis" }, [ mdToDom(markdown) ]));
+  const cr = state.creditReport;
+  if (!cr || !cr.markdown) {
+    body.appendChild(el("div", { class: "report-empty", text: "Upload your credit report PDF from any of the 3 bureaus (Equifax, Experian, TransUnion) — or all three — and the AI reads the full report and gives you a prioritized plan to max out your score: utilization targets, disputes, and what to protect." }));
+    return;
+  }
+  body.appendChild(el("div", { class: "report-meta" }, [
+    el("span", { class: "report-date", text: "Analyzed " + (cr.date || "") + " — saved, no need to re-run" }),
+    el("div", { class: "report-actions" }, [
+      el("button", { class: "btn-export sm", title: "Download as an HTML file you can open, save, or print to PDF", on: { click: exportCreditReport } }, [ document.createTextNode("⬇ Export") ]),
+      el("button", { class: "btn-export sm", title: "Copy the text", on: { click: () => { try { navigator.clipboard.writeText(cr.markdown); toast("Copied to clipboard"); } catch (e) { toast("Couldn't copy"); } } } }, [ document.createTextNode("Copy") ]),
+    ]),
+  ]));
+  body.appendChild(el("div", { class: "report-analysis" }, [ mdToDom(cr.markdown) ]));
+}
+
+// Export the saved analysis as a self-contained, printable HTML file.
+function exportCreditReport() {
+  const cr = state.creditReport;
+  if (!cr || !cr.markdown) { toast("Run a report analysis first."); return; }
+  const css = "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:760px;margin:40px auto;padding:0 22px;color:#1a1a1a;line-height:1.55;}"
+    + "h1{font-size:22px;margin:0 0 4px;}.meta{color:#666;font-size:13px;margin-bottom:24px;}"
+    + ".md h2{font-size:18px;margin:22px 0 8px;}.md h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#2563eb;margin:18px 0 6px;}.md h4{font-size:14px;margin:12px 0 4px;}"
+    + ".md p{margin:0 0 10px;}.md ul,.md ol{margin:0 0 10px;padding-left:22px;}.md li{margin:3px 0;}.md strong{font-weight:700;}"
+    + ".md hr{border:none;border-top:1px solid #ddd;margin:16px 0;}"
+    + "table{border-collapse:collapse;width:100%;font-size:13px;margin:10px 0;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;}th{background:#f3f4f6;}"
+    + "@media print{body{margin:0 auto;}}";
+  const html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Credit Score Action Plan</title><style>" + css + "</style></head><body>"
+    + "<h1>Credit Score Action Plan</h1><div class='meta'>Generated " + (cr.date || "") + " · Budget Planner</div>"
+    + mdToDom(cr.markdown).outerHTML + "</body></html>";
+  const d = new Date();
+  const stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const blob = new Blob(["﻿" + html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = el("a", { props: { href: url, download: "credit-report-summary-" + stamp + ".html" } });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast("Exported — open the file to view or print to PDF", true);
 }
 
 /* --------------------------- NAVIGATION --------------------------- */
