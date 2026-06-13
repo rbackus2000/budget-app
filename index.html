@@ -921,6 +921,29 @@
   .credit-action .cc-date { color: var(--accent); font-weight: 600; }
   .credit-action .cc-soon { color: var(--red); font-weight: 700; }
   .credit-meta { font-size: .74rem; color: var(--text-dim); margin-top: 4px; }
+
+  /* Credit Score Simulator */
+  .sim-input { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .sim-field { flex: 0 1 200px; }
+  .sim-field label { font-size: .78rem; color: var(--text-dim); margin-bottom: 6px; }
+  .sim-current {
+    display: flex; align-items: center; gap: 12px; margin: 16px 0 6px;
+    padding: 12px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px;
+  }
+  .sim-current .sim-label { font-weight: 700; }
+  .sim-current .sim-util { color: var(--text-dim); font-size: .82rem; }
+  .sim-current .sim-score { margin-left: auto; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sim-row { padding: 13px 16px; border: 1px solid var(--border); border-radius: 11px; margin-bottom: 10px; }
+  .sim-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .sim-row .sim-label { font-weight: 700; font-size: .95rem; }
+  .sim-paydown { font-size: .78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .sim-est { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; }
+  .sim-range { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--green); }
+  .sim-delta { font-size: .9rem; font-weight: 600; color: var(--text-dim); }
+  .sim-delta.up { color: var(--green); }
+  .sim-rationale { font-size: .82rem; color: var(--text-dim); margin-top: 6px; line-height: 1.45; }
+  .sim-disclaimer { font-size: .74rem; color: var(--text-dim); margin-top: 10px; font-style: italic; }
+  .sim-empty { color: var(--text-dim); font-size: .9rem; padding: 8px 0; }
   .credit-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
   .btn-pay.sm { padding: 7px 13px; font-size: .78rem; }
 
@@ -1128,6 +1151,22 @@
     <div class="hint">Your reported <b>utilization</b> = balance on the statement closing date ÷ credit limit. Pay each card down to its target <b>2 days before</b> it closes so a low balance reports to the bureaus. Always pay the statement in full by the due date to avoid interest.</div>
   </section>
 
+  <!-- CREDIT SCORE SIMULATOR -->
+  <section class="card view" data-view="bills" id="creditSimCard">
+    <div class="card-header">
+      <div class="card-title"><span>Credit Score Simulator</span></div>
+    </div>
+    <div class="sim-input">
+      <div class="sim-field">
+        <label for="creditScore">Your current credit score</label>
+        <input type="number" id="creditScore" min="300" max="850" placeholder="e.g. 680" />
+      </div>
+      <button class="btn-add-item" id="simulateBtn"><span>✦</span> Simulate</button>
+    </div>
+    <div id="simResults"></div>
+    <div class="hint">Estimates how paying your cards down would move your score, based on utilization. AI estimate from your real balances and limits — not a guarantee. Lowering reported utilization is one of the fastest ways to raise a score.</div>
+  </section>
+
   <!-- PAYDAY PLAN -->
   <section class="card view" data-view="plan">
     <div class="card-header">
@@ -1322,6 +1361,7 @@ let state = {
   emergencyDate: "",  // optional target date to fully fund the emergency fund
   commissionFunPct: 10, // % of commission kept as fun; the rest follows the debt-then-goals plan
   goalsSlicePct: 20,  // % of the Savings slice carved straight to goals each check (rest to debt)
+  creditScore: "",    // current credit score, for the score simulator
 };
 
 function newEarner() {
@@ -1348,7 +1388,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20 };
+  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, creditScore: "" };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1377,6 +1417,7 @@ function normalizeState() {
   if (typeof state.emergencyDate !== "string") state.emergencyDate = "";
   { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 10; }
   { const v = parseFloat(state.goalsSlicePct); state.goalsSlicePct = (isFinite(v) && v >= 0 && v <= 100) ? v : 20; }
+  if (typeof state.creditScore !== "string") state.creditScore = state.creditScore == null ? "" : String(state.creditScore);
 }
 
 function save() {
@@ -2839,6 +2880,8 @@ function exportCSV() {
 function utilClass(frac) { return frac < 0.10 ? "lo" : frac < 0.30 ? "mid" : "hi"; }
 
 function renderCredit() {
+  const scoreEl = document.getElementById("creditScore");
+  if (scoreEl && document.activeElement !== scoreEl) scoreEl.value = state.creditScore || "";
   const list = document.getElementById("creditList");
   const banner = document.getElementById("creditBanner");
   const overallEl = document.getElementById("utilOverall");
@@ -3353,6 +3396,87 @@ function openBatchReview(list) {
   document.body.appendChild(overlay);
 }
 
+/* ----------------------- CREDIT SIMULATOR ------------------------- */
+// Deterministic utilization scenarios from the user's real cards.
+function creditScenarios() {
+  const cards = creditCards();
+  const totalLimit = cards.reduce((s, c) => s + num(c.creditLimit), 0);
+  const totalBal = cards.reduce((s, c) => s + currentBalance(c), 0);
+  if (totalLimit <= 0 || totalBal <= 0) return null;
+  const curUtil = totalBal / totalLimit;
+  const mk = (key, label, targetUtil) => {
+    const targetBal = totalLimit * targetUtil;
+    return { key: key, label: label, utilPct: Math.round(targetUtil * 100), payDown: +Math.max(0, totalBal - targetBal).toFixed(2) };
+  };
+  const list = [
+    mk("payoff", "Pay off all cards", 0),
+    mk("to10", "Pay all down to 10%", 0.10),
+    mk("to30", "Pay all down to 30%", 0.30),
+  ].filter(s => s.payDown > 0.5);
+  return { currentUtilPct: Math.round(curUtil * 100), totalBal: totalBal, totalLimit: totalLimit, scenarios: list };
+}
+
+async function runCreditSim() {
+  const scoreEl = document.getElementById("creditScore");
+  const results = document.getElementById("simResults");
+  const score = parseInt(scoreEl.value, 10);
+  if (!(score >= 300 && score <= 850)) { toast("Enter a credit score between 300 and 850."); scoreEl.focus(); return; }
+  state.creditScore = String(score); save();
+
+  const sc = creditScenarios();
+  if (!sc) { clear(results); results.appendChild(el("div", { class: "sim-empty", text: "Add at least one credit card with a balance and a credit limit (Bills tab) to simulate." })); return; }
+  if (!currentUser) { toast("Sign in first."); return; }
+  const token = await getAuthToken();
+  if (!token) { toast("Your session expired — sign in again."); return; }
+
+  showLoading("Simulating your score…");
+  try {
+    const res = await fetch("/api/credit-sim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ currentScore: score, currentUtilPct: sc.currentUtilPct, scenarios: sc.scenarios }),
+    });
+    const data = await res.json().catch(() => ({}));
+    hideLoading();
+    if (!res.ok) { toast(data.error || "Couldn't run the simulation."); return; }
+    renderSimResults(score, sc, data);
+  } catch (e) { hideLoading(); toast("Couldn't reach the simulator. Try again."); }
+}
+
+function renderSimResults(score, sc, data) {
+  const results = document.getElementById("simResults");
+  clear(results);
+  const byKey = {};
+  (data.scenarios || []).forEach(s => { byKey[s.key] = s; });
+
+  results.appendChild(el("div", { class: "sim-current" }, [
+    el("span", { class: "sim-label", text: "Today" }),
+    el("span", { class: "sim-util", text: sc.currentUtilPct + "% utilization" }),
+    el("span", { class: "sim-score", text: String(score) }),
+  ]));
+
+  sc.scenarios.forEach(s => {
+    const est = byKey[s.key];
+    const row = el("div", { class: "sim-row" }, [
+      el("div", { class: "sim-row-head" }, [
+        el("span", { class: "sim-label", text: s.label }),
+        el("span", { class: "sim-paydown", text: "pay " + fmt(s.payDown) + " → " + s.utilPct + "% util" }),
+      ]),
+    ]);
+    if (est) {
+      const up = est.estimatedScoreHigh > score;
+      row.appendChild(el("div", { class: "sim-est" }, [
+        el("span", { class: "sim-range", text: est.estimatedScoreLow + "–" + est.estimatedScoreHigh }),
+        el("span", { class: "sim-delta" + (up ? " up" : ""), text: est.pointsChange }),
+      ]));
+      row.appendChild(el("div", { class: "sim-rationale", text: est.rationale }));
+    }
+    results.appendChild(row);
+  });
+
+  if (data.disclaimer) results.appendChild(el("div", { class: "sim-disclaimer", text: data.disclaimer }));
+}
+
 /* --------------------------- NAVIGATION --------------------------- */
 const VIEW_TITLES = { home: "Overview", income: "Income & Paychecks", bills: "Bills & Debt", plan: "Your Plan", goals: "Goals & Savings", coach: "AI Money Coach" };
 const MONTH_VIEWS = { home: true, income: true, plan: true, bills: false, goals: false, coach: false };
@@ -3555,6 +3679,9 @@ function init() {
   });
   document.getElementById("addBill").addEventListener("click", () => openBillModal(null));
   document.getElementById("uploadStmtBtn").addEventListener("click", () => document.getElementById("stmtFile").click());
+  document.getElementById("creditScore").addEventListener("input", e => { state.creditScore = e.target.value; save(); });
+  document.getElementById("simulateBtn").addEventListener("click", runCreditSim);
+  document.getElementById("creditScore").addEventListener("keydown", e => { if (e.key === "Enter") runCreditSim(); });
   document.getElementById("stmtFile").addEventListener("change", e => { const list = Array.from(e.target.files || []); e.target.value = ""; handleStatementFiles(list); });
   document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
