@@ -944,6 +944,12 @@
   .sim-rationale { font-size: .82rem; color: var(--text-dim); margin-top: 6px; line-height: 1.45; }
   .sim-disclaimer { font-size: .74rem; color: var(--text-dim); margin-top: 10px; font-style: italic; }
   .sim-empty { color: var(--text-dim); font-size: .9rem; padding: 8px 0; }
+
+  /* Credit Report Analyzer */
+  .report-body { background: var(--bg); border: 1px solid var(--border); border-radius: 11px; padding: 16px 18px; min-height: 60px; }
+  .report-empty { color: var(--text-dim); font-size: .9rem; line-height: 1.55; }
+  .report-analysis .md h3 { color: var(--accent); }
+  .report-privacy { color: var(--text-dim); }
   .credit-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 11px; }
   .btn-pay.sm { padding: 7px 13px; font-size: .78rem; }
 
@@ -1165,6 +1171,19 @@
     </div>
     <div id="simResults"></div>
     <div class="hint">The score sweet spot is <b>low single-digit utilization (about 1–9%), not 0%</b> — keep one card reporting a small balance and the rest at $0 (the "AZEO" approach). Under 30% avoids damage; under 10% is excellent. Paying a card to $0 still saves interest and is fine — it just doesn't beat a tiny reported balance for your score. AI estimate from your real balances and limits, not a guarantee.</div>
+  </section>
+
+  <!-- CREDIT REPORT ANALYZER -->
+  <section class="card view" data-view="bills" id="creditReportCard">
+    <div class="card-header">
+      <div class="card-title"><span>Credit Report Analyzer</span></div>
+      <button class="btn-upload" id="uploadReportBtn" title="Upload your credit report PDF(s) from Equifax, Experian, or TransUnion">⬆ Upload report(s)</button>
+    </div>
+    <input type="file" id="reportFile" accept="application/pdf" multiple style="display:none" />
+    <div class="report-body" id="reportBody">
+      <div class="report-empty" id="reportEmpty">Upload your credit report PDF from any of the 3 bureaus (Equifax, Experian, TransUnion) — or all three — and the AI reads the full report and gives you a prioritized plan to max out your score: utilization targets, disputes, and what to protect.</div>
+    </div>
+    <div class="hint report-privacy">⚠ Your credit report is highly sensitive (account numbers, history). It's sent to Anthropic's API to be read, processed in memory, and discarded — never stored. Upload one bureau at a time if the files are large.</div>
   </section>
 
   <!-- PAYDAY PLAN -->
@@ -3477,6 +3496,42 @@ function renderSimResults(score, sc, data) {
   if (data.disclaimer) results.appendChild(el("div", { class: "sim-disclaimer", text: data.disclaimer }));
 }
 
+/* -------------------- CREDIT REPORT ANALYZER ---------------------- */
+async function handleCreditReports(fileList) {
+  let files = Array.from(fileList || []);
+  files = files.filter(f => (f.type === "application/pdf" || /\.pdf$/i.test(f.name)));
+  if (!files.length) { toast("Choose your credit report PDF(s)."); return; }
+  if (files.length > 3) { toast("Upload up to 3 reports (one per bureau)."); return; }
+  if (!currentUser) { toast("Sign in first to analyze a report."); return; }
+  const token = await getAuthToken();
+  if (!token) { toast("Your session expired — sign in again."); return; }
+
+  showLoading(files.length > 1 ? ("Reading " + files.length + " reports…") : "Reading your credit report…");
+  try {
+    const reports = [];
+    for (const f of files) reports.push({ pdf: await readFileBase64(f), filename: f.name });
+    const res = await fetch("/api/credit-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ reports: reports, currentScore: parseInt(state.creditScore, 10) || null }),
+    });
+    const data = await res.json().catch(() => ({}));
+    hideLoading();
+    if (!res.ok) { toast(data.error || "Couldn't analyze the report."); return; }
+    renderReportAnalysis(data.analysis || "");
+  } catch (e) {
+    hideLoading();
+    toast("Couldn't analyze the report. Try again or upload one bureau at a time.");
+  }
+}
+
+function renderReportAnalysis(markdown) {
+  const body = document.getElementById("reportBody");
+  clear(body);
+  if (!markdown) { body.appendChild(el("div", { class: "report-empty", text: "No analysis returned — try again." })); return; }
+  body.appendChild(el("div", { class: "report-analysis" }, [ mdToDom(markdown) ]));
+}
+
 /* --------------------------- NAVIGATION --------------------------- */
 const VIEW_TITLES = { home: "Overview", income: "Income & Paychecks", bills: "Bills & Debt", plan: "Your Plan", goals: "Goals & Savings", coach: "AI Money Coach" };
 const MONTH_VIEWS = { home: true, income: true, plan: true, bills: false, goals: false, coach: false };
@@ -3682,6 +3737,8 @@ function init() {
   document.getElementById("creditScore").addEventListener("input", e => { state.creditScore = e.target.value; save(); });
   document.getElementById("simulateBtn").addEventListener("click", runCreditSim);
   document.getElementById("creditScore").addEventListener("keydown", e => { if (e.key === "Enter") runCreditSim(); });
+  document.getElementById("uploadReportBtn").addEventListener("click", () => document.getElementById("reportFile").click());
+  document.getElementById("reportFile").addEventListener("change", e => { const list = Array.from(e.target.files || []); e.target.value = ""; handleCreditReports(list); });
   document.getElementById("stmtFile").addEventListener("change", e => { const list = Array.from(e.target.files || []); e.target.value = ""; handleStatementFiles(list); });
   document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
