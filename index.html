@@ -1194,7 +1194,7 @@
     <div class="report-body" id="reportBody">
       <div class="report-empty" id="reportEmpty">Upload your credit report PDF from any of the 3 bureaus (Equifax, Experian, TransUnion) — or all three — and the AI reads the full report and gives you a prioritized plan to max out your score: utilization targets, disputes, and what to protect.</div>
     </div>
-    <div class="hint report-privacy">⚠ Your credit report is highly sensitive (account numbers, history). It's sent to Anthropic's API to be read, processed in memory, and discarded — never stored. Upload one bureau at a time if the files are large.</div>
+    <div class="hint report-privacy">⚠ The report text is extracted in your browser; only that text is sent to Anthropic's API to be read, processed in memory, and discarded — never stored. Large multi-page reports (100+ pages) work fine. Scanned/image-only PDFs may have no readable text — use the downloaded PDF from the bureau.</div>
   </section>
 
   <!-- PAYDAY PLAN -->
@@ -3537,6 +3537,37 @@ function renderSimResults(score, sc, data) {
 }
 
 /* -------------------- CREDIT REPORT ANALYZER ---------------------- */
+// Credit reports are long PDFs (100+ pages, multiple MB) that blow past
+// Vercel's request limit and Anthropic's 100-page cap. So extract the TEXT in
+// the browser with pdf.js and send only the text — small, fast, no page limit.
+const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+let pdfjsLoading = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (pdfjsLoading) return pdfjsLoading;
+  pdfjsLoading = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = PDFJS_URL;
+    s.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; } catch (e) {} resolve(window.pdfjsLib); };
+    s.onerror = () => reject(new Error("pdfjs load failed"));
+    document.head.appendChild(s);
+  });
+  return pdfjsLoading;
+}
+async function extractPdfText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  let out = "";
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    out += content.items.map(it => it.str).join(" ") + "\n";
+    if (out.length > 520000) break; // safety cap
+  }
+  return out;
+}
+
 async function handleCreditReports(fileList) {
   let files = Array.from(fileList || []);
   files = files.filter(f => (f.type === "application/pdf" || /\.pdf$/i.test(f.name)));
@@ -3548,8 +3579,13 @@ async function handleCreditReports(fileList) {
 
   showLoading(files.length > 1 ? ("Reading " + files.length + " reports…") : "Reading your credit report…");
   try {
+    await loadPdfJs();
     const reports = [];
-    for (const f of files) reports.push({ pdf: await readFileBase64(f), filename: f.name });
+    for (const f of files) {
+      const text = await extractPdfText(f);
+      if (!text || text.trim().length < 50) { hideLoading(); toast("Couldn't read text from " + f.name + " — it may be a scanned image. Use the downloaded PDF from the bureau."); return; }
+      reports.push({ text: text.slice(0, 500000), filename: f.name });
+    }
     const res = await fetch("/api/credit-report", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
@@ -3561,7 +3597,7 @@ async function handleCreditReports(fileList) {
     renderReportAnalysis(data.analysis || "");
   } catch (e) {
     hideLoading();
-    toast("Couldn't analyze the report. Try again or upload one bureau at a time.");
+    toast("Couldn't read that PDF. Try a downloaded report from the bureau, or one bureau at a time.");
   }
 }
 

@@ -18,7 +18,7 @@ const ALLOWED_EMAILS = ["rbackus2000@gmail.com", "bridgettehuff282@gmail.com"];
 
 const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 4000;
-const MAX_TOTAL_B64 = 4_400_000; // ~3.3MB of PDF across all reports — Vercel body cap
+const MAX_TEXT = 600_000; // chars of extracted report text across all reports
 
 const SYSTEM_PROMPT = `You are an expert credit analyst. You read a person's actual credit report(s) — possibly from more than one bureau (Equifax, Experian, TransUnion) — and produce a clear, prioritized action plan to raise their score toward its maximum.
 
@@ -79,11 +79,6 @@ async function readBody(req) {
   });
 }
 
-function isPdf(b64) {
-  try { return Buffer.from(b64.slice(0, 12), "base64").toString("latin1").indexOf("%PDF") === 0; }
-  catch (e) { return false; }
-}
-
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") return sendJSON(res, 405, { error: "Method not allowed" });
 
@@ -101,20 +96,18 @@ module.exports = async function handler(req, res) {
   if (!reports.length) return sendJSON(res, 400, { error: "No report received." });
 
   let total = 0;
+  const texts = [];
   for (const r of reports) {
-    const pdf = String((r && r.pdf) || "");
-    if (!pdf || !isPdf(pdf)) return sendJSON(res, 400, { error: "One of the files isn't a PDF credit report." });
-    total += pdf.length;
+    const t = String((r && r.text) || "").trim();
+    if (!t) return sendJSON(res, 400, { error: "Couldn't read text from one of the files — it may be a scanned image. Use the downloaded PDF from the bureau." });
+    total += t.length;
+    texts.push({ text: t, filename: (r && r.filename) || "report" });
   }
-  if (total > MAX_TOTAL_B64) return sendJSON(res, 413, { error: "Reports too large together — upload one bureau at a time." });
+  if (total > MAX_TEXT) return sendJSON(res, 413, { error: "Report text is very large — upload one bureau at a time." });
 
-  const content = [];
-  reports.forEach((r, i) => {
-    content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: r.pdf } });
-  });
-  let instruction = "Analyze the attached credit report" + (reports.length > 1 ? "s (" + reports.length + " bureaus)" : "") + " and give me a prioritized plan to raise my score to its maximum.";
-  if (currentScore >= 300 && currentScore <= 850) instruction += " My current score is about " + currentScore + ".";
-  content.push({ type: "text", text: instruction });
+  let content = "Analyze the following credit report" + (texts.length > 1 ? " (" + texts.length + " bureaus)" : "") + " and give me a prioritized plan to raise my score to its maximum.";
+  if (currentScore >= 300 && currentScore <= 850) content += " My current score is about " + currentScore + ".";
+  texts.forEach((r, i) => { content += "\n\n===== CREDIT REPORT " + (i + 1) + " (" + r.filename + ") =====\n" + r.text; });
 
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
