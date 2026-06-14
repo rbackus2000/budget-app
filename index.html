@@ -1446,7 +1446,7 @@
       <label for="planStartInput">Plan starts on</label>
       <input type="date" id="planStartInput" />
       <button class="plan-btn" id="planStartToday" type="button" title="Roll from today instead of a fixed date">Today</button>
-      <span class="plan-from-note">The plan lays out each week's bills from this date by their due date. Anything due before it is assumed handled. Tick a bill paid or move it to another week to override.</span>
+      <span class="plan-from-note">Sets which paychecks the plan counts (your income window). Bills lay into each week by their due date — tick one paid or push it (→) to a later week to override.</span>
     </div>
     <div class="goals-slice-row">
       <div class="gs-label">Of your Savings each check: <b id="goalsSliceLbl">20%</b> to goals, the rest to debt</div>
@@ -2166,8 +2166,10 @@ function monthsToPayoff(balance, apr, payment) {
 const PLAN_HORIZON_END = () => { const t = effectivePlanStart(); return new Date(t.getFullYear(), t.getMonth() + 2, 0); };
 function buildPaydayPlan() {
   // The plan projects forward from the user-set start date (Plan view), or from
-  // today if none is set. Paychecks and bill occurrences before the start date
-  // are excluded — anything due earlier is assumed already handled.
+  // today if none is set. The start date gates which PAYCHECKS are counted
+  // (the income window); bills always appear by their due date and are managed
+  // explicitly (mark paid / push to another week), so a bill you've moved is
+  // never silently dropped when the start date changes.
   const start = effectivePlanStart();
   const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
   const horizonEnd = PLAN_HORIZON_END();
@@ -2201,7 +2203,7 @@ function buildPaydayPlan() {
       const paid = !!(b.paid && b.paid[mk]);
       days.forEach(d => {
         const date = new Date(yy, mm, d);
-        if (date < start || date > horizonEnd) return; // due before the plan start = assumed handled
+        if (date > horizonEnd) return; // bills are due-date driven; start date only gates paychecks
         const dk = ymd(date);
         events.push({ bill: b, day: d, date: date, monthKey: mk, dateKey: dk, paid: paid, deferCount: (b.defer && b.defer[dk]) || 0 });
       });
@@ -2947,7 +2949,7 @@ function renderPaydayPlan() {
   ]));
   const planFrom = state.planStart ? dateShort(effectivePlanStart()).replace(/^\w+, /, "") : "today (" + dateShort(todayMidnight()).replace(/^\w+, /, "") + ")";
   wrap.appendChild(el("div", { class: "payday-rolling-note", text:
-    "Paychecks and bills from " + planFrom + " through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". Tick a bill once you've paid it and the plan updates." }));
+    "Counting paychecks from " + planFrom + " through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". Tick a bill once you've paid it, or push it (→) to a later week." }));
 
   let lastMonthShown = "";
   plan.windows.forEach((w, wi) => {
