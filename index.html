@@ -2012,8 +2012,11 @@ function payDatesInRange(firstPayStr, start, end) {
   return dates;
 }
 
-// All paychecks in [start, end] across earners, with commission added to the
-// last check of each month that has one. Rolls across month boundaries.
+// All paychecks in [start, end] across earners. Commission is VARIABLE income
+// (different every month, never guaranteed), so we only apply it to the CURRENT
+// month — the regular paychecks are the only consistent recurring income. We do
+// NOT extrapolate this month's commission into future months, which would
+// over-state projected income.
 function buildPaychecksInRange(start, end) {
   const checks = [];
   state.earners.forEach(e => {
@@ -2024,10 +2027,12 @@ function buildPaychecksInRange(start, end) {
   checks.sort((a, b) => a.date - b.date);
   const comm = num(state.commission);
   if (comm > 0 && checks.length) {
-    const lastByMonth = {};
-    checks.forEach(c => { lastByMonth[ymKey(c.date)] = c.date; });
-    Object.keys(lastByMonth).forEach(k => checks.push({ date: lastByMonth[k], label: "Commission", amount: comm, isCommission: true }));
-    checks.sort((a, b) => a.date - b.date);
+    const curKey = ymKey(start);
+    const inCur = checks.filter(c => ymKey(c.date) === curKey);
+    if (inCur.length) {
+      checks.push({ date: inCur[inCur.length - 1].date, label: "Commission", amount: comm, isCommission: true });
+      checks.sort((a, b) => a.date - b.date);
+    }
   }
   return checks;
 }
@@ -4151,16 +4156,30 @@ function renderHome() {
     }
     anaBody.appendChild(statsRow);
 
-    let pts;
+    // Both charts are scoped to THIS MONTH (the header says "This month") so the
+    // line never balloons across the multi-month payday-plan horizon.
+    const ym = viewYM();
+    let pts, firstLabel;
     if (isInc) {
-      pts = [{ value: 0 }];
-      if (plan && plan.windows.length) { let cum = 0; plan.windows.forEach(w => { cum += w.amount; pts.push({ value: cum, date: w.date }); }); }
-      else pts.push({ value: income });
+      // Cumulative paychecks for the viewed month, ending at the month's real
+      // total. Commission is counted ONCE here (the variable amount for this
+      // month) — it is never projected forward as recurring income.
+      const checks = buildSchedule();
+      pts = [{ value: 0, date: checks.length ? checks[0].date : null }];
+      let cum = 0;
+      checks.forEach(c => { cum += c.amount; pts.push({ value: cum, date: c.date }); });
+      if (checks.length < 1) pts.push({ value: income });
+      firstLabel = "Start";
     } else {
+      // Running checking balance across this month's remaining paydays.
       pts = [{ value: num(state.bank) }];
-      if (plan && plan.windows.length) plan.windows.forEach(w => pts.push({ value: w.endBalance, date: w.date }));
+      const mw = (plan && plan.windows.length) ? plan.windows.filter(w => w.date.getFullYear() === ym.y && w.date.getMonth() === ym.m) : [];
+      if (mw.length) mw.forEach(w => pts.push({ value: w.endBalance, date: w.date }));
       else pts.push({ value: projectedEOM() });
+      firstLabel = "Now";
     }
+    const dated = pts.filter(p => p.date);
+    const shortD = d => dateShort(d).replace(/^\w+, /, "");
     const fv = pts.map(p => p.value);
     let fmin = Math.min.apply(null, fv), fmax = Math.max.apply(null, fv);
     if (fmin === fmax) fmax = fmin + 1;
@@ -4172,9 +4191,9 @@ function renderHome() {
       fsArea(pts, { min: fmin, max: fmax }), yaxis,
       el("div", { class: "fs-tooltip", style: { left: "56%", top: "28px" } }, [el("span", { class: "nm2", text: isInc ? "Income" : "Projected" }), tipAmt]),
       el("div", { class: "fs-xaxis" }, [
-        el("span", { text: isInc ? "Start" : "Now" }),
-        el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[Math.floor(plan.windows.length / 2)].date).replace(/^\w+, /, "") : "" }),
-        el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[plan.windows.length - 1].date).replace(/^\w+, /, "") : "Month-end" }),
+        el("span", { text: firstLabel }),
+        el("span", { text: dated.length ? shortD(dated[Math.floor((dated.length - 1) / 2)].date) : "" }),
+        el("span", { text: dated.length ? shortD(dated[dated.length - 1].date) : "Month-end" }),
       ]),
     ]));
   }
