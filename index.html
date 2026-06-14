@@ -4295,11 +4295,21 @@ function renderHome() {
 
   /* ---------------- COLUMN C ---------------- */
   const tx = el("div", { class: "fs-card", style: { padding: "22px 22px 8px" } });
+  // Pull straight from the payday plan: walk windows in order, skip anything
+  // already PAID or paid-off, and show each remaining bill at the payday it's
+  // scheduled to be paid (so bills moved to a later week show on that week).
   let ups = [];
-  if (plan && plan.windows.length) ups = plan.windows[0].bills.slice(0, 5).map(x => ({ name: (x.bill && x.bill.name) || "Bill", amount: x.amount, date: x.date, paid: x.paid }));
-  if (!ups.length) ups = state.bills.slice(0, 5).map(b => ({ name: b.name || "Bill", amount: monthlyPayment(b), date: null }));
+  if (plan && plan.windows.length) {
+    const curKey = ymKey(new Date(viewYM().y, viewYM().m, 15)); // this month's occurrences only
+    plan.windows.forEach(w => w.bills.forEach(x => {
+      if (x.paid || x.paidOff || x.monthKey !== curKey) return;
+      ups.push({ name: (x.bill && x.bill.name) || "Bill", amount: x.amount, payDate: w.date, deferred: x.deferred });
+    }));
+    ups = ups.slice(0, 6);
+  }
+  if (!ups.length && (!plan || !plan.windows.length)) ups = state.bills.slice(0, 6).map(b => ({ name: b.name || "Bill", amount: monthlyPayment(b), payDate: null }));
   tx.appendChild(el("div", { class: "fs-chead", style: { alignItems: "flex-start" } }, [
-    el("div", null, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Upcoming bills" }), el("p", { style: { margin: "5px 0 0", fontSize: "12px", color: "var(--fs-dim)" }, text: ups.length + " due next" })]),
+    el("div", null, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Upcoming bills" }), el("p", { style: { margin: "5px 0 0", fontSize: "12px", color: "var(--fs-dim)" }, text: ups.length ? ups.length + " scheduled next" : "all caught up" })]),
     el("span", { class: "fs-expand", on: { click: () => showView("plan") } }, [svgIcon(ICON_EXPAND, 17)]),
   ]));
   const txList = el("div", { style: { marginTop: "12px", display: "flex", flexDirection: "column" } });
@@ -4309,12 +4319,12 @@ function renderHome() {
       el("div", { class: "fs-logo", style: { background: fsColor(u.name) } }, [document.createTextNode(String(u.name).charAt(0).toUpperCase())]),
       el("div", { style: { flex: "1", minWidth: "0" } }, [
         el("div", { class: "fs-tname", text: u.name }),
-        el("div", { class: "fs-tmeta", text: u.date ? ("Due " + dateShort(u.date).replace(/^\w+, /, "")) : "Monthly" }),
+        el("div", { class: "fs-tmeta", text: u.payDate ? ((u.deferred ? "Moved to " : "Pay ") + dateShort(u.payDate).replace(/^\w+, /, "")) : "Monthly" }),
       ]),
       amt,
     ]));
   });
-  if (!ups.length) txList.appendChild(el("div", { style: { padding: "14px 0", fontSize: "13px", color: "var(--fs-dim)" }, text: "No bills yet." }));
+  if (!ups.length) txList.appendChild(el("div", { style: { padding: "14px 0", fontSize: "13px", color: "var(--fs-dim)" }, text: "All bills paid or none added yet." }));
   tx.appendChild(txList);
 
   const acct = el("div", { class: "fs-card", style: { padding: "22px 22px" } }, [
