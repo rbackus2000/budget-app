@@ -4107,8 +4107,12 @@ function renderHome() {
   ]));
 
   /* ---------------- COLUMN A ---------------- */
+  const anaBody = el("div");
   const anaTabs = el("div", { class: "fs-tabs" });
-  ["Expenses", "Income"].forEach((t, i) => anaTabs.appendChild(el("button", { class: "fs-tab" + (i === 0 ? " active" : ""), text: t, on: { click: e => fsToggle(anaTabs, e.currentTarget) } })));
+  ["Expenses", "Income"].forEach((t, i) => anaTabs.appendChild(el("button", {
+    class: "fs-tab" + (i === 0 ? " active" : ""), text: t,
+    on: { click: e => { fsToggle(anaTabs, e.currentTarget); renderAna(t.toLowerCase()); } },
+  })));
   const ana = el("div", { class: "fs-card", style: { padding: "22px 24px 18px" } }, [
     el("div", { class: "fs-chead" }, [
       el("h3", { class: "fs-ctitle", text: "Analytics" }),
@@ -4118,36 +4122,63 @@ function renderHome() {
         el("button", { class: "fs-iconsq", style: { color: "var(--fs-dim)" }, on: { click: () => showView("plan") } }, [svgIcon(ICON_EXPAND, 16)]),
       ]),
     ]),
+    anaBody,
   ]);
-  const topBills = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).sort((a, b) => b.value - a.value);
-  const statsRow = el("div", { style: { display: "flex", gap: "26px", marginTop: "22px", flexWrap: "wrap" } });
-  topBills.slice(0, 3).forEach(b => statsRow.appendChild(el("div", null, [
-    el("div", { class: "fs-cat" }, [
-      el("span", { style: { width: "9px", height: "9px", borderRadius: "3px", background: fsColor(b.name), display: "inline-block", flex: "none" } }),
-      el("span", { class: "nm", text: b.name.length > 12 ? b.name.slice(0, 11) + "…" : b.name }),
-    ]),
-    el("div", { class: "fs-statamt" }, [fsMoney(b.value)]),
-  ])));
-  ana.appendChild(statsRow);
-  const flowPts = [{ value: num(state.bank) }];
-  if (plan && plan.windows.length) plan.windows.forEach(w => flowPts.push({ value: w.endBalance, date: w.date }));
-  else flowPts.push({ value: projectedEOM() });
-  const fv = flowPts.map(p => p.value);
-  let fmin = Math.min.apply(null, fv), fmax = Math.max.apply(null, fv);
-  if (fmin === fmax) fmax = fmin + 1;
-  const kFmt = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(Math.round(v));
-  const yaxis = el("div", { class: "fs-yaxis" });
-  [0, 1, 2, 3, 4].forEach(i => yaxis.appendChild(el("span", { text: kFmt(fmax - (fmax - fmin) * i / 4) })));
-  const tipAmt = fsMoney(flowPts[flowPts.length - 1].value); tipAmt.className = "v";
-  ana.appendChild(el("div", { class: "fs-area-wrap", style: { height: "172px" } }, [
-    fsArea(flowPts, { min: fmin, max: fmax }), yaxis,
-    el("div", { class: "fs-tooltip", style: { left: "56%", top: "28px" } }, [el("span", { class: "nm2", text: "Projected" }), tipAmt]),
-    el("div", { class: "fs-xaxis" }, [
-      el("span", { text: "Now" }),
-      el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[Math.floor(plan.windows.length / 2)].date).replace(/^\w+, /, "") : "" }),
-      el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[plan.windows.length - 1].date).replace(/^\w+, /, "") : "Month-end" }),
-    ]),
-  ]));
+  // Expenses tab = spending by bill + cash-flow line; Income tab = paycheck
+  // sources + cumulative-income line. Both read existing data only.
+  function renderAna(tab) {
+    clear(anaBody);
+    const isInc = tab === "income";
+    let stats;
+    if (isInc) {
+      const byLabel = {};
+      buildSchedule().forEach(c => { byLabel[c.label] = (byLabel[c.label] || 0) + c.amount; });
+      stats = Object.keys(byLabel).map(k => ({ name: k, value: byLabel[k] })).sort((a, b) => b.value - a.value);
+    } else {
+      stats = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).sort((a, b) => b.value - a.value);
+    }
+    const statsRow = el("div", { style: { display: "flex", gap: "26px", marginTop: "22px", flexWrap: "wrap" } });
+    if (stats.length) {
+      stats.slice(0, 3).forEach(b => statsRow.appendChild(el("div", null, [
+        el("div", { class: "fs-cat" }, [
+          el("span", { style: { width: "9px", height: "9px", borderRadius: "3px", background: fsColor(b.name), display: "inline-block", flex: "none" } }),
+          el("span", { class: "nm", text: b.name.length > 12 ? b.name.slice(0, 11) + "…" : b.name }),
+        ]),
+        el("div", { class: "fs-statamt" }, [fsMoney(b.value)]),
+      ])));
+    } else {
+      statsRow.appendChild(el("div", { style: { fontSize: "13px", color: "var(--fs-dim)" }, text: isInc ? "Add your paychecks on the Income tab to see sources." : "Add bills to see spending." }));
+    }
+    anaBody.appendChild(statsRow);
+
+    let pts;
+    if (isInc) {
+      pts = [{ value: 0 }];
+      if (plan && plan.windows.length) { let cum = 0; plan.windows.forEach(w => { cum += w.amount; pts.push({ value: cum, date: w.date }); }); }
+      else pts.push({ value: income });
+    } else {
+      pts = [{ value: num(state.bank) }];
+      if (plan && plan.windows.length) plan.windows.forEach(w => pts.push({ value: w.endBalance, date: w.date }));
+      else pts.push({ value: projectedEOM() });
+    }
+    const fv = pts.map(p => p.value);
+    let fmin = Math.min.apply(null, fv), fmax = Math.max.apply(null, fv);
+    if (fmin === fmax) fmax = fmin + 1;
+    const kFmt = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(Math.round(v));
+    const yaxis = el("div", { class: "fs-yaxis" });
+    [0, 1, 2, 3, 4].forEach(i => yaxis.appendChild(el("span", { text: kFmt(fmax - (fmax - fmin) * i / 4) })));
+    const tipAmt = fsMoney(pts[pts.length - 1].value); tipAmt.className = "v";
+    anaBody.appendChild(el("div", { class: "fs-area-wrap", style: { height: "172px" } }, [
+      fsArea(pts, { min: fmin, max: fmax }), yaxis,
+      el("div", { class: "fs-tooltip", style: { left: "56%", top: "28px" } }, [el("span", { class: "nm2", text: isInc ? "Income" : "Projected" }), tipAmt]),
+      el("div", { class: "fs-xaxis" }, [
+        el("span", { text: isInc ? "Start" : "Now" }),
+        el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[Math.floor(plan.windows.length / 2)].date).replace(/^\w+, /, "") : "" }),
+        el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[plan.windows.length - 1].date).replace(/^\w+, /, "") : "Month-end" }),
+      ]),
+    ]));
+  }
+  renderAna("expenses");
 
   const expand = () => el("span", { class: "fs-expand" }, [svgIcon(ICON_EXPAND, 17)]);
   const incCard = el("div", { class: "fs-card", style: { padding: "22px 24px", cursor: "pointer" }, on: { click: () => showView("income") } }, [
