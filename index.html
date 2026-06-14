@@ -332,11 +332,17 @@
   .pay-stats .ps .v.rem { color: var(--accent); }
   .pay-stats .ps .v.done { color: var(--green); }
   .progress {
-    height: 9px; background: var(--bg); border-radius: 999px; overflow: hidden;
+    height: 10px; background: var(--bg); border-radius: 999px; overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.20);
   }
   .progress > span {
-    display: block; height: 100%; background: var(--green);
+    display: block; height: 100%; background: var(--green); position: relative;
     border-radius: 999px; transition: width .3s;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--green) 50%, transparent);
+  }
+  .progress > span::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(rgba(255,255,255,.38), rgba(255,255,255,0) 65%);
   }
   .progress-label { font-size: .72rem; color: var(--text-dim); margin-top: -8px; }
   .pay-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -608,13 +614,18 @@
   .diff.neg { color: var(--red); }
   .compare-table tfoot td { border-top: 2px solid var(--border); font-size: 1.02rem; }
   .bar {
-    height: 6px;
+    height: 7px;
     background: var(--bg);
     border-radius: 999px;
     overflow: hidden;
     margin-top: 6px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.18);
   }
-  .bar > span { display: block; height: 100%; border-radius: 999px; transition: width .3s; }
+  .bar > span { display: block; height: 100%; border-radius: 999px; transition: width .3s; position: relative; }
+  .bar > span::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(rgba(255,255,255,.34), rgba(255,255,255,0) 65%);
+  }
 
   .hint { color: var(--text-dim); font-size: .8rem; margin-top: 14px; text-align: center; }
   @media (max-width: 600px) {
@@ -783,8 +794,9 @@
   .home-card .hc-big { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .home-card .hc-sub { font-size: .82rem; color: var(--text-dim); margin-top: 3px; line-height: 1.45; }
   .home-card.coach .hc-sub { color: rgba(33,48,10,.82); }
-  .home-bar { height: 7px; background: var(--bg); border-radius: 99px; overflow: hidden; margin: 8px 0; }
-  .home-bar > span { display: block; height: 100%; border-radius: 99px; }
+  .home-bar { height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; margin: 8px 0; box-shadow: inset 0 1px 2px rgba(0,0,0,.20); }
+  .home-bar > span { display: block; height: 100%; border-radius: 99px; position: relative; box-shadow: 0 0 8px rgba(255,255,255,.16); }
+  .home-bar > span::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(rgba(255,255,255,.36), rgba(255,255,255,0) 65%); }
   .home-empty { color: var(--text-dim); font-size: .9rem; }
 
   @media (max-width: 860px) {
