@@ -7,7 +7,11 @@
 <style>
   /* ---- LIGHT GLASS THEME (default) ---- */
   :root {
-    --app-bg: linear-gradient(135deg, #e9ebe6 0%, #dfe2dc 100%);
+    --app-bg:
+      radial-gradient(1000px circle at 80% -12%, #ffffff 0%, transparent 54%),
+      radial-gradient(760px circle at 0% 110%, #e3efe0 0%, transparent 52%),
+      linear-gradient(135deg, #e7eae4 0%, #d9ddd6 100%);
+    --panel-bg: linear-gradient(155deg, rgba(255,255,255,.74), rgba(255,255,255,.52));
     --bg: #e4e7e1;
     --card-bg: linear-gradient(150deg, rgba(255,255,255,.78), rgba(255,255,255,.46));
     --card-border: rgba(255,255,255,.85);
@@ -27,17 +31,22 @@
     --glass-blur: blur(14px);
     --glow1: rgba(205,249,74,.22); --glow2: rgba(127,212,255,.16);
   }
-  /* ---- DARK GLASS THEME ---- */
+  /* ---- DARK GLASS THEME (matches the fintech-dashboard reference) ---- */
   [data-theme="dark"] {
-    --app-bg: linear-gradient(135deg, #12181f 0%, #0a0d11 55%, #0e1419 100%);
+    --app-bg:
+      radial-gradient(1000px circle at 84% -6%, #7a5733 0%, rgba(122,87,51,0) 46%),
+      radial-gradient(820px circle at -6% 112%, #244a3e 0%, rgba(36,74,62,0) 48%),
+      radial-gradient(700px circle at 22% 88%, #3a3026 0%, rgba(58,48,38,0) 50%),
+      linear-gradient(140deg, #322a22 0%, #241f1a 50%, #1a1714 100%);
+    --panel-bg: linear-gradient(155deg, rgba(26,29,34,.80), rgba(13,15,19,.76));
     --bg: #0d1116;
-    --card-bg: linear-gradient(150deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
-    --card-border: rgba(255,255,255,.10);
-    --surface: linear-gradient(150deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+    --card-bg: linear-gradient(150deg, rgba(255,255,255,.085), rgba(255,255,255,.035));
+    --card-border: rgba(255,255,255,.12);
+    --surface: linear-gradient(150deg, rgba(255,255,255,.07), rgba(255,255,255,.035));
     --surface-2: rgba(255,255,255,.08);
-    --border: rgba(255,255,255,.10);
+    --border: rgba(255,255,255,.11);
     --input-bg: rgba(255,255,255,.05);
-    --text: #eef1f0;
+    --text: #f1f3f1;
     --text-dim: #9aa3a0;
     --accent: #cdf94a;
     --accent-fill: #cdf94a;
@@ -45,9 +54,9 @@
     --accent-soft: rgba(205,249,74,.15);
     --green: #8fd64a; --green-soft: rgba(143,214,74,.13);
     --red: #f0726a; --red-soft: rgba(240,114,106,.13);
-    --shadow: 0 8px 28px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.07);
-    --glass-blur: blur(16px);
-    --glow1: rgba(205,249,74,.10); --glow2: rgba(127,212,255,.08);
+    --shadow: 0 10px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+    --glass-blur: blur(22px);
+    --glow1: rgba(205,249,74,.10); --glow2: rgba(255,176,92,.12);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -788,6 +797,27 @@
     .sidebar { width: 80vw; max-width: 280px; }
   }
 
+  /* ---- FLOATING GLASS PANEL (desktop) — the dashboard floats over the ambient backdrop ---- */
+  @media (min-width: 861px) {
+    body { padding: 30px; }
+    .app-shell {
+      height: calc(100vh - 60px);
+      min-height: 0;
+      border-radius: 26px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+      background: var(--panel-bg);
+      -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+      box-shadow: 0 40px 90px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+    }
+    .sidebar {
+      position: static; height: auto; background: transparent;
+      border-right: 1px solid var(--border);
+    }
+    .main { overflow-y: auto; }
+    .topbar { background: var(--surface); }
+  }
+
   /* Goals & Savings */
   .goal-row { background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 14px 16px; margin-bottom: 12px; }
   .goal-row.emergency { border-color: rgba(63,185,80,.4); }
@@ -1453,7 +1483,7 @@ let state = {
   goalsSlicePct: 20,  // % of the Savings slice carved straight to goals each check (rest to debt)
   creditScore: "",    // current credit score, for the score simulator
   creditReport: { markdown: "", date: "" }, // saved AI credit-report analysis so it persists
-  theme: "light",     // "light" | "dark" — glass theme; light is default
+  theme: "dark",      // "light" | "dark" — glass theme; dark is the signature look
 };
 
 function newEarner() {
@@ -1511,7 +1541,7 @@ function normalizeState() {
   { const v = parseFloat(state.goalsSlicePct); state.goalsSlicePct = (isFinite(v) && v >= 0 && v <= 100) ? v : 20; }
   if (typeof state.creditScore !== "string") state.creditScore = state.creditScore == null ? "" : String(state.creditScore);
   if (!state.creditReport || typeof state.creditReport !== "object") state.creditReport = { markdown: "", date: "" };
-  if (state.theme !== "light" && state.theme !== "dark") state.theme = "light";
+  if (state.theme !== "light" && state.theme !== "dark") state.theme = "dark";
 }
 
 function save() {
@@ -3733,6 +3763,7 @@ function showView(v) {
   const sbEl = document.getElementById("sidebar"); if (sbEl) sbEl.classList.remove("open");
   if (v === "home") renderHome();
   window.scrollTo(0, 0);
+  const mainEl = document.querySelector(".main"); if (mainEl) mainEl.scrollTop = 0;
 }
 
 function renderHome() {
