@@ -1442,6 +1442,12 @@
         <button class="plan-btn" id="methodSnowball" title="Extra money goes to the smallest balance — quickest wins for momentum">Snowball</button>
       </div>
     </div>
+    <div class="plan-from-row">
+      <label for="planStartInput">Plan starts on</label>
+      <input type="date" id="planStartInput" />
+      <button class="plan-btn" id="planStartToday" type="button" title="Roll from today instead of a fixed date">Today</button>
+      <span class="plan-from-note">The plan lays out each week's bills from this date by their due date. Anything due before it is assumed handled. Tick a bill paid or move it to another week to override.</span>
+    </div>
     <div class="goals-slice-row">
       <div class="gs-label">Of your Savings each check: <b id="goalsSliceLbl">20%</b> to goals, the rest to debt</div>
       <input type="range" id="goalsSliceRange" min="0" max="100" step="5" value="20" />
@@ -2157,13 +2163,16 @@ function monthsToPayoff(balance, apr, payment) {
 // each monthly occurrence is marked paid or not (no date-based assumptions) —
 // then the DEBT PLAN runs (Savings slice → priority credit-card debt), with a
 // goals carve, and whatever's left of Savings flows to goals.
-const PLAN_HORIZON_END = () => { const t = todayMidnight(); return new Date(t.getFullYear(), t.getMonth() + 2, 0); };
+const PLAN_HORIZON_END = () => { const t = effectivePlanStart(); return new Date(t.getFullYear(), t.getMonth() + 2, 0); };
 function buildPaydayPlan() {
-  const today = todayMidnight();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  // The plan projects forward from the user-set start date (Plan view), or from
+  // today if none is set. Paychecks and bill occurrences before the start date
+  // are excluded — anything due earlier is assumed already handled.
+  const start = effectivePlanStart();
+  const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
   const horizonEnd = PLAN_HORIZON_END();
 
-  const checks = buildPaychecksInRange(today, horizonEnd);
+  const checks = buildPaychecksInRange(start, horizonEnd);
   if (!checks.length) return null;
 
   // Same-day checks (incl. commission) pool into one payday window. Track the
@@ -2192,7 +2201,7 @@ function buildPaydayPlan() {
       const paid = !!(b.paid && b.paid[mk]);
       days.forEach(d => {
         const date = new Date(yy, mm, d);
-        if (date > horizonEnd) return;
+        if (date < start || date > horizonEnd) return; // due before the plan start = assumed handled
         const dk = ymd(date);
         events.push({ bill: b, day: d, date: date, monthKey: mk, dateKey: dk, paid: paid, deferCount: (b.defer && b.defer[dk]) || 0 });
       });
@@ -2895,6 +2904,9 @@ function renderPaydayPlan() {
   const gsLbl = document.getElementById("goalsSliceLbl");
   if (gsLbl) gsLbl.textContent = Math.round(num(state.goalsSlicePct)) + "%";
 
+  const psInput = document.getElementById("planStartInput");
+  if (psInput && psInput.value !== (state.planStart || "")) psInput.value = state.planStart || "";
+
   const wrap = document.getElementById("paydayPlan");
   const banner = document.getElementById("paydayBanner");
   clear(wrap);
@@ -2928,13 +2940,14 @@ function renderPaydayPlan() {
     banner.textContent = msg;
   }
 
-  // Starting balance + a note that the plan rolls from today.
+  // Starting balance + a note about the window the plan projects across.
   wrap.appendChild(el("div", { class: "payday-start" }, [
     el("span", { text: "Starting bank balance" }),
     el("span", { class: "ps-amt", text: fmt(num(state.bank)) }),
   ]));
+  const planFrom = state.planStart ? dateShort(effectivePlanStart()).replace(/^\w+, /, "") : "today (" + dateShort(todayMidnight()).replace(/^\w+, /, "") + ")";
   wrap.appendChild(el("div", { class: "payday-rolling-note", text:
-    "Your next paychecks from today (" + dateShort(todayMidnight()).replace(/^\w+, /, "") + ") through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". Tick a bill once you've paid it and the plan updates." }));
+    "Paychecks and bills from " + planFrom + " through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". Tick a bill once you've paid it and the plan updates." }));
 
   let lastMonthShown = "";
   plan.windows.forEach((w, wi) => {
@@ -4468,6 +4481,8 @@ function init() {
   document.getElementById("stmtFile").addEventListener("change", e => { const list = Array.from(e.target.files || []); e.target.value = ""; handleStatementFiles(list); });
   document.getElementById("methodAvalanche").addEventListener("click", () => setPayoffMethod("avalanche"));
   document.getElementById("methodSnowball").addEventListener("click", () => setPayoffMethod("snowball"));
+  document.getElementById("planStartInput").addEventListener("change", e => { state.planStart = e.target.value || ""; recalcAll(); });
+  document.getElementById("planStartToday").addEventListener("click", () => { state.planStart = ""; recalcAll(); });
   document.getElementById("goalsSliceRange").addEventListener("input", e => {
     state.goalsSlicePct = parseFloat(e.target.value) || 0;
     document.getElementById("goalsSliceLbl").textContent = Math.round(state.goalsSlicePct) + "%";
