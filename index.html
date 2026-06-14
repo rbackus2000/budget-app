@@ -30,6 +30,7 @@
     --shadow: 0 6px 20px rgba(60,70,55,.10), inset 0 1px 0 rgba(255,255,255,.9);
     --glass-blur: blur(14px);
     --glow1: rgba(205,249,74,.22); --glow2: rgba(127,212,255,.16);
+    --bar-mut: rgba(60,70,55,.16);
   }
   /* ---- DARK GLASS THEME (matches the fintech-dashboard reference) ---- */
   [data-theme="dark"] {
@@ -57,6 +58,7 @@
     --shadow: 0 10px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
     --glass-blur: blur(22px);
     --glow1: rgba(205,249,74,.10); --glow2: rgba(255,176,92,.12);
+    --bar-mut: rgba(255,255,255,.12);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -803,6 +805,32 @@
   .home-bar > span { display: block; height: 100%; border-radius: 99px; position: relative; box-shadow: 0 0 8px rgba(255,255,255,.16); }
   .home-bar > span::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(rgba(255,255,255,.36), rgba(255,255,255,0) 65%); }
   .home-empty { color: var(--text-dim); font-size: .9rem; }
+
+  /* ---- Financial-summary hero header ---- */
+  .fin-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .fin-title { font-size: 1.95rem; font-weight: 700; letter-spacing: -.025em; line-height: 1.08; }
+  .fin-sub { font-size: .92rem; color: var(--text-dim); margin-top: 5px; }
+  .balance-chip { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 9px 18px; box-shadow: var(--shadow); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+  .balance-chip .bc-k { font-size: .66rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); }
+  .balance-chip .bc-v { font-size: 1.3rem; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+
+  /* ---- Bento chart cards ---- */
+  .home-card.chart-area { grid-column: span 2; }
+  .home-card.chart-bars { display: flex; flex-direction: column; }
+  .home-card.chart-bars .chart-wrap { flex: 1; display: flex; align-items: center; }
+  .chart-wrap { margin-top: 10px; }
+  .chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 6; }
+  .chart-line { vector-effect: non-scaling-stroke; filter: drop-shadow(0 2px 5px color-mix(in srgb, var(--accent) 40%, transparent)); }
+  .bar-hi { fill: var(--accent); }
+  .bar-mut { fill: var(--bar-mut); }
+  .bar-val { fill: var(--text); font-size: 19px; font-weight: 700; font-family: inherit; }
+  .bar-lbl { fill: var(--text-dim); font-size: 15px; font-family: inherit; }
+  .chart-legend { display: flex; gap: 24px; margin-top: 14px; flex-wrap: wrap; }
+  .chart-legend .cl { display: flex; flex-direction: column; gap: 2px; }
+  .chart-legend .cl .k { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); }
+  .chart-legend .cl .v { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  @media (min-width: 1000px) { .home-grid { grid-template-columns: repeat(3, 1fr); } }
 
   @media (max-width: 860px) {
     .sidebar { position: fixed; left: 0; top: 0; transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 40px rgba(0,0,0,.5); }
@@ -1667,6 +1695,77 @@ const ICON_CAL = ["M5 4h14a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 
 const ICON_CARD = ["M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z", "M2 10h20"];
 const ICON_FLAG = ["M5 21V4", "M5 4h12l-2 3 2 3H5"];
 const ICON_STAR = ["M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"];
+const ICON_TREND = ["M22 7l-8.5 8.5-5-5L2 17", "M16 7h6v6"];
+const ICON_BARS = ["M4 19V5", "M4 19h16", "M8 16v-5", "M13 16V8", "M18 16v-3"];
+
+/* ----------------------- SVG CHARTS (presentation) ----------------- *
+ * Pure renderers — they take already-computed numbers and draw them.    *
+ * No data fetching or calculation lives here.                           */
+const SVGNS = "http://www.w3.org/2000/svg";
+let _chartSeq = 0;
+function svgEl(tag, attrs, kids) {
+  const n = document.createElementNS(SVGNS, tag);
+  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (kids) (Array.isArray(kids) ? kids : [kids]).forEach(c => { if (c != null) n.appendChild(c); });
+  return n;
+}
+// Smooth lime area + line chart. data = [{label, value}] (needs >= 2 points).
+function areaChart(data) {
+  const W = 620, H = 210, padT = 16, padB = 22, padX = 6;
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg" });
+  if (!data || data.length < 2) return svg;
+  const vals = data.map(d => d.value);
+  let min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  if (min === max) max = min + 1;
+  const span = max - min || 1;
+  const innerW = W - padX * 2, innerH = H - padT - padB;
+  const X = i => padX + (innerW * i) / (data.length - 1);
+  const Y = v => padT + innerH - ((v - min) / span) * innerH;
+  const pts = data.map((d, i) => [X(i), Y(d.value)]);
+  // Catmull-Rom -> cubic bezier for a smooth line.
+  let line = "M" + pts[0][0].toFixed(1) + " " + pts[0][1].toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    line += " C" + c1x.toFixed(1) + " " + c1y.toFixed(1) + " " + c2x.toFixed(1) + " " + c2y.toFixed(1) + " " + p2[0].toFixed(1) + " " + p2[1].toFixed(1);
+  }
+  const baseY = padT + innerH;
+  const area = line + " L" + pts[pts.length - 1][0].toFixed(1) + " " + baseY + " L" + pts[0][0].toFixed(1) + " " + baseY + " Z";
+  const gid = "agrad" + (_chartSeq++);
+  svg.appendChild(svgEl("defs", null, svgEl("linearGradient", { id: gid, x1: "0", y1: "0", x2: "0", y2: "1" }, [
+    svgEl("stop", { offset: "0%", "stop-color": "var(--accent)", "stop-opacity": "0.30" }),
+    svgEl("stop", { offset: "100%", "stop-color": "var(--accent)", "stop-opacity": "0" }),
+  ])));
+  for (let g = 0; g <= 2; g++) {
+    const yy = padT + (innerH * g) / 2;
+    svg.appendChild(svgEl("line", { x1: padX, y1: yy, x2: W - padX, y2: yy, class: "chart-grid" }));
+  }
+  svg.appendChild(svgEl("path", { d: area, fill: "url(#" + gid + ")", stroke: "none" }));
+  svg.appendChild(svgEl("path", { d: line, fill: "none", stroke: "var(--accent)", "stroke-width": "2.5", "stroke-linejoin": "round", "stroke-linecap": "round", class: "chart-line" }));
+  const last = pts[pts.length - 1];
+  svg.appendChild(svgEl("circle", { cx: last[0].toFixed(1), cy: last[1].toFixed(1), r: "4.5", fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": "2" }));
+  return svg;
+}
+// Rounded vertical bar chart, one highlighted. bars = [{label, value, highlight, valueLabel}].
+function barChart(bars) {
+  const W = 460, H = 230, padT = 34, padB = 28, padX = 10;
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, class: "chart-svg" });
+  if (!bars || !bars.length) return svg;
+  const max = Math.max.apply(null, bars.map(b => b.value)) || 1;
+  const innerH = H - padT - padB, innerW = W - padX * 2;
+  const slot = innerW / bars.length;
+  const bw = Math.min(54, slot * 0.56);
+  bars.forEach((b, i) => {
+    const h = Math.max(4, (b.value / max) * innerH);
+    const x = padX + slot * i + (slot - bw) / 2;
+    const y = padT + innerH - h;
+    svg.appendChild(svgEl("rect", { x: x.toFixed(1), y: y.toFixed(1), width: bw.toFixed(1), height: h.toFixed(1), rx: Math.min(bw / 2, 11), class: b.highlight ? "bar-hi" : "bar-mut" }));
+    if (b.highlight && b.valueLabel) svg.appendChild(svgEl("text", { x: (x + bw / 2).toFixed(1), y: (y - 9).toFixed(1), "text-anchor": "middle", class: "bar-val" }, document.createTextNode(b.valueLabel)));
+    svg.appendChild(svgEl("text", { x: (x + bw / 2).toFixed(1), y: H - 8, "text-anchor": "middle", class: "bar-lbl" }, document.createTextNode(b.label)));
+  });
+  return svg;
+}
 
 /* ---------------------------- HELPERS ----------------------------- */
 const num = v => { const n = parseFloat(v); return isFinite(n) && n > 0 ? n : 0; };
@@ -3795,49 +3894,84 @@ function renderHome() {
   if (!statRow || !grid) return;
   clear(statRow); clear(grid);
 
+  // ---- Hero header: "Financial summary" + subtitle + balance chip ----
   const name = currentUser && currentUser.email ? currentUser.email.split("@")[0] : "";
-  greet.textContent = "";
-  if (name) {
-    greet.appendChild(document.createTextNode("Hi "));
-    greet.appendChild(el("b", { text: name.charAt(0).toUpperCase() + name.slice(1) }));
-    greet.appendChild(document.createTextNode(" — here's where your money stands."));
-  } else {
-    greet.textContent = "Here's where your money stands.";
-  }
+  greet.className = "fin-header";
+  clear(greet);
+  greet.appendChild(el("div", { class: "fin-h-left" }, [
+    el("h1", { class: "fin-title", text: "Financial summary" }),
+    el("p", { class: "fin-sub", text: name ? ("Hi " + name.charAt(0).toUpperCase() + name.slice(1) + " — here's where your money stands.") : "Here's where your money stands." }),
+  ]));
+  greet.appendChild(el("div", { class: "balance-chip" }, [
+    el("span", { class: "bc-k", text: "Current cash" }),
+    el("span", { class: "bc-v", text: fmt(currentCash()) }),
+  ]));
 
+  // ---- KPI tiles ----
   const income = totalIncome();
-  const leftover = income - totalMonthlyPayments();
+  const monthly = totalMonthlyPayments();
+  const leftover = income - monthly;
+  const debt = state.bills.reduce((s, b) => s + currentBalance(b), 0);
   const stat = (lbl, val, cls) => el("div", { class: "home-stat" }, [
     el("div", { class: "lbl", text: lbl }),
     el("div", { class: "val" + (cls ? " " + cls : ""), text: fmt(val) }),
   ]);
-  statRow.appendChild(stat("Current cash", currentCash(), currentCash() < 0 ? "neg" : ""));
   statRow.appendChild(stat("Projected month-end", projectedEOM(), projectedEOM() < 0 ? "neg" : ""));
   statRow.appendChild(stat("Leftover this month", leftover, leftover >= 0 ? "pos" : "neg"));
+  statRow.appendChild(stat("Total debt", debt, ""));
 
-  const card = (icon, title, nav, children, coach) => {
+  const card = (icon, title, nav, children, extraClass) => {
     const head = el("div", { class: "hc-head" }, [ svgIcon(icon, 18), el("span", { text: title }), el("span", { class: "hc-go", text: "View ›" }) ]);
-    return el("div", { class: "home-card" + (coach ? " coach" : ""), on: { click: () => showView(nav) } }, [head].concat(children));
+    return el("div", { class: "home-card" + (extraClass ? " " + extraClass : ""), on: { click: () => showView(nav) } }, [head].concat(children));
   };
   const row = (k, v, color) => el("div", { class: "hc-row" }, [ el("span", { class: "k", text: k }), el("span", { class: "v", style: color ? { color: color } : null, text: v }) ]);
+  const legend = (k, v, color) => el("div", { class: "cl" }, [ el("span", { class: "k", text: k }), el("span", { class: "v", style: color ? { color: color } : null, text: v }) ]);
 
-  // Next paycheck
   const plan = buildPaydayPlan();
+
+  // ---- Cash flow area chart: running checking balance across paydays ----
+  const flowPts = [{ label: "Now", value: num(state.bank) }];
+  if (plan && plan.windows.length) plan.windows.forEach(w => flowPts.push({ label: dateShort(w.date).replace(/^\w+, /, ""), value: w.endBalance }));
+  else flowPts.push({ label: "Month-end", value: projectedEOM() });
+  grid.appendChild(card(ICON_TREND, "Cash flow · this month", "plan", [
+    el("div", { class: "chart-wrap" }, [ areaChart(flowPts) ]),
+    el("div", { class: "chart-legend" }, [
+      legend("Income", fmt(income)),
+      legend("Bills", fmt(monthly)),
+      legend("Leftover", fmt(leftover), leftover >= 0 ? "var(--accent)" : "var(--red)"),
+    ]),
+  ], "chart-area"));
+
+  // ---- Top spending bar chart: monthly payments by bill (biggest highlighted) ----
+  const spend = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(s => s.value > 0).sort((a, b) => b.value - a.value).slice(0, 5);
+  if (spend.length) {
+    const maxV = spend[0].value;
+    const bars = spend.map(s => ({
+      label: s.name.length > 8 ? s.name.slice(0, 7) + "…" : s.name,
+      value: s.value, highlight: s.value === maxV,
+      valueLabel: "$" + Math.round(s.value).toLocaleString("en-US"),
+    }));
+    grid.appendChild(card(ICON_BARS, "Top spending", "bills", [
+      el("div", { class: "chart-wrap" }, [ barChart(bars) ]),
+    ], "chart-bars"));
+  }
+
+  // ---- Next paycheck ----
   if (plan && plan.windows.length) {
     const w = plan.windows[0];
     grid.appendChild(card(ICON_CAL, "Next paycheck · " + dateShort(w.date).replace(/^\w+, /, ""), "plan", [
       row("Bills", fmt(w.minTotal)),
-      row("Debt plan", fmt(w.extraTotal), "var(--green)"),
+      row("Debt plan", fmt(w.extraTotal), "var(--accent)"),
       row("Goals (leftover)", fmt(w.goalLeftover)),
       row("Fun money", fmt(w.funEarmark)),
     ]));
   }
 
-  // Credit
+  // ---- Credit utilization ----
   const util = overallUtilization();
   if (util != null) {
     const cls = utilClass(util);
-    const color = cls === "lo" ? "var(--green)" : cls === "mid" ? "#e0a83c" : "var(--red)";
+    const color = cls === "lo" ? "var(--accent)" : cls === "mid" ? "#e0a83c" : "var(--red)";
     grid.appendChild(card(ICON_CARD, "Credit utilization", "bills", [
       el("div", { class: "hc-big", style: { color: color }, text: Math.round(util * 100) + "%" }),
       el("div", { class: "home-bar" }, [ el("span", { style: { width: Math.min(100, util * 100) + "%", background: color } }) ]),
@@ -3845,16 +3979,15 @@ function renderHome() {
     ]));
   }
 
-  // Debt
-  const debt = state.bills.reduce((s, b) => s + currentBalance(b), 0);
+  // ---- Debt remaining ----
   if (debt > 0) {
     grid.appendChild(card(ICON_FILE, "Debt remaining", "bills", [
       el("div", { class: "hc-big", text: fmt(debt) }),
-      el("div", { class: "hc-sub", text: "Monthly payments " + fmt(totalMonthlyPayments()) + (plan && plan.totalExtra > 0 ? " · plan sends " + fmt(plan.totalExtra) + " extra this month" : "") }),
+      el("div", { class: "hc-sub", text: "Monthly payments " + fmt(monthly) + (plan && plan.totalExtra > 0 ? " · plan sends " + fmt(plan.totalExtra) + " extra this month" : "") }),
     ]));
   }
 
-  // Goals
+  // ---- My savings (emergency + first goal) ----
   const efTarget = emergencyTarget(), efSaved = num(state.emergencySaved);
   const efPct = efTarget > 0 ? Math.min(100, efSaved / efTarget * 100) : 0;
   const goalsChildren = [
@@ -3869,14 +4002,14 @@ function renderHome() {
   } else {
     goalsChildren.push(el("div", { class: "hc-sub", text: "Add a goal to start tracking toward it." }));
   }
-  grid.appendChild(card(ICON_FLAG, "Goals & savings", "goals", goalsChildren));
+  grid.appendChild(card(ICON_FLAG, "My savings", "goals", goalsChildren));
 
-  // Coach nudge
+  // ---- Coach (featured lime card, full width) ----
   grid.appendChild(card(ICON_STAR, "AI Money Coach", "coach", [
     el("div", { class: "hc-sub", text: "Ask anything about your money, or get a full read on where you stand and your best next move." }),
-  ], true));
+  ], "coach"));
 
-  if (!plan && util == null && debt <= 0) {
+  if (!plan && util == null && debt <= 0 && !spend.length) {
     grid.appendChild(el("div", { class: "home-empty", text: "Add your income and bills (Income and Bills tabs) to bring your dashboard to life." }));
   }
 }
