@@ -830,6 +830,102 @@
   .chart-legend .cl { display: flex; flex-direction: column; gap: 2px; }
   .chart-legend .cl .k { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); }
   .chart-legend .cl .v { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* ===================== FINANCIAL SUMMARY DASHBOARD (Home) ===================== */
+  .fs-dash {
+    --fs-bright:#16201a; --fs-text:#1c241a; --fs-mid:#3c463c; --fs-dim:#5b6560; --fs-faint:#8a938c;
+    --fs-card-bg: rgba(255,255,255,0.58); --fs-card-border: rgba(0,0,0,0.07);
+    --fs-row: rgba(0,0,0,0.035); --fs-row-border: rgba(0,0,0,0.06);
+    --fs-track: rgba(0,0,0,0.10); --fs-hair: rgba(0,0,0,0.07);
+    --fs-bar1:#c4ccc0; --fs-bar2:#aab2a4; --fs-seg:rgba(0,0,0,0.05); --fs-seg-active:rgba(0,0,0,0.10);
+    --fs-pos:#4d9e2a; --fs-neg:#d65a52;
+    --fs-mono: ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  [data-theme="dark"] .fs-dash {
+    --fs-bright:#f4f5f6; --fs-text:#e8e9ea; --fs-mid:#bcc0c3; --fs-dim:#8d9195; --fs-faint:#7e8488;
+    --fs-card-bg: rgba(18,19,20,0.55); --fs-card-border: rgba(255,255,255,0.06);
+    --fs-row: rgba(255,255,255,0.03); --fs-row-border: rgba(255,255,255,0.05);
+    --fs-track: rgba(255,255,255,0.08); --fs-hair: rgba(255,255,255,0.05);
+    --fs-bar1:#4a4d50; --fs-bar2:#303234; --fs-seg:rgba(0,0,0,0.26); --fs-seg-active:rgba(255,255,255,0.14);
+    --fs-pos:#9be36a; --fs-neg:#ff7a6b;
+  }
+  .fs-dash .dec { color: var(--fs-faint); }
+  .fs-mono { font-family: var(--fs-mono); }
+
+  /* header */
+  .fs-header { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:24px; }
+  .fs-title { margin:0; font-size:40px; font-weight:700; letter-spacing:-1.2px; color:var(--fs-bright); line-height:1; }
+  .fs-subtitle { margin:12px 0 0; font-size:15px; color:var(--fs-dim); }
+  .fs-hctrls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .fs-seg { display:flex; align-items:center; gap:3px; padding:5px; border-radius:15px; background:var(--fs-seg); border:1px solid var(--fs-card-border); }
+  .fs-seg-btn { display:flex; align-items:center; gap:6px; padding:9px 15px; border-radius:11px; border:none; font:600 14px inherit; cursor:pointer; background:transparent; color:var(--fs-dim); transition:all .15s; white-space:nowrap; }
+  .fs-seg-btn.active { background:var(--fs-seg-active); color:var(--fs-bright); }
+  .fs-icon-circle { width:46px; height:46px; border-radius:50%; border:1px solid var(--fs-card-border); background:var(--fs-seg); color:var(--fs-mid); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
+  .fs-balance { display:flex; align-items:center; gap:11px; padding:5px 16px 5px 5px; border-radius:30px; background:var(--fs-seg); border:1px solid var(--fs-card-border); }
+  .fs-avatar { width:36px; height:36px; border-radius:50%; flex:none; background-image:radial-gradient(circle at 50% 38%, #c9b7a5 18%, transparent 19%), linear-gradient(135deg,#8a8d90,#43464a); }
+  .fs-balance-amt { font:600 16px var(--fs-mono); color:var(--fs-bright); letter-spacing:-0.3px; }
+  .fs-eye { color:var(--fs-dim); cursor:pointer; display:flex; flex:none; }
+
+  /* grid + cards */
+  .fs-grid { display:grid; grid-template-columns:1.55fr 1.04fr 1.02fr; gap:13px; }
+  .fs-col { display:flex; flex-direction:column; gap:13px; min-width:0; }
+  .fs-card { background:var(--fs-card-bg); border:1px solid var(--fs-card-border); border-radius:20px; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+  .fs-chead { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .fs-ctitle { margin:0; font-size:19px; font-weight:600; color:var(--fs-bright); }
+  .fs-expand { color:var(--fs-dim); cursor:pointer; flex:none; }
+  .fs-tabs { display:flex; gap:3px; padding:4px; border-radius:11px; background:var(--fs-seg); }
+  .fs-tab { padding:7px 14px; border-radius:9px; border:none; font:600 13px inherit; cursor:pointer; background:transparent; color:var(--fs-dim); transition:all .15s; }
+  .fs-tab.active { background:var(--fs-seg-active); color:var(--fs-bright); }
+  .fs-iconsq { width:34px; height:34px; border-radius:10px; border:1px solid var(--fs-card-border); background:var(--fs-row); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
+  .fs-statamt { margin-top:7px; font:700 24px var(--fs-mono); color:var(--fs-bright); letter-spacing:-0.5px; }
+  .fs-bigamt { font:700 29px var(--fs-mono); color:var(--fs-bright); letter-spacing:-1px; }
+  .fs-num { font-family:var(--fs-mono); color:var(--fs-bright); }
+  .fs-badge { display:inline-flex; align-items:center; gap:3px; font:600 11px var(--fs-mono); }
+  .fs-badge.up { color:var(--fs-pos); } .fs-badge.down { color:var(--fs-neg); }
+  .fs-cat { display:flex; align-items:center; gap:7px; }
+  .fs-cat .nm { font-size:13.5px; color:var(--fs-mid); white-space:nowrap; }
+
+  /* area chart */
+  .fs-area-wrap { position:relative; margin-top:14px; }
+  .fs-yaxis { position:absolute; right:0; top:0; height:148px; display:flex; flex-direction:column; justify-content:space-between; font:500 11px var(--fs-mono); color:var(--fs-faint); text-align:right; }
+  .fs-area-svg { width:calc(100% - 30px); height:148px; display:block; }
+  .fs-xaxis { display:flex; justify-content:space-between; width:calc(100% - 30px); margin-top:5px; font:500 11px var(--fs-mono); color:var(--fs-faint); }
+  .fs-tooltip { position:absolute; display:flex; align-items:center; gap:7px; padding:8px 12px; border-radius:11px; background:#0b0c0d; border:1px solid rgba(255,255,255,0.10); box-shadow:0 8px 22px rgba(0,0,0,0.5); white-space:nowrap; pointer-events:none; }
+  .fs-tooltip .v { font:600 13px var(--fs-mono); color:#fff; }
+  .fs-tooltip .nm2 { font-size:13px; font-weight:600; color:#e8e9ea; }
+
+  /* bar chart */
+  .fs-bars { display:flex; align-items:flex-end; justify-content:space-between; gap:6px; height:150px; }
+  .fs-barcol { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; }
+  .fs-bar { width:100%; border-radius:7px 7px 0 0; background:linear-gradient(180deg,var(--fs-bar1),var(--fs-bar2)); display:flex; align-items:flex-end; justify-content:center; padding-bottom:8px; min-height:14px; }
+  .fs-bar.hi { background:linear-gradient(180deg,#d4f24a,#b3e024); box-shadow:0 0 22px rgba(198,242,63,0.35); }
+  .fs-bar .vlabel { writing-mode:vertical-rl; transform:rotate(180deg); font:600 11px var(--fs-mono); color:var(--fs-mid); }
+  .fs-bar.hi .vlabel { color:#1a1b0c; font-weight:700; }
+  .fs-chips { display:flex; justify-content:space-between; gap:6px; margin-top:9px; }
+  .fs-chip { flex:1; display:flex; justify-content:center; }
+  .fs-chip > span { width:24px; height:24px; border-radius:8px; display:flex; align-items:center; justify-content:center; font:700 10px inherit; color:#fff; }
+
+  /* savings */
+  .fs-prog { flex:1; height:7px; border-radius:6px; background:var(--fs-track); overflow:hidden; }
+  .fs-prog > span { display:block; height:100%; border-radius:6px; background:var(--accent); }
+  .fs-hairline { height:1px; background:var(--fs-hair); margin:16px 0; }
+
+  /* transaction / account rows */
+  .fs-trow { display:flex; align-items:center; gap:12px; padding:10px 0; }
+  .fs-trow + .fs-trow { border-top:1px solid var(--fs-row-border); }
+  .fs-logo { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex:none; font:700 13px inherit; color:#fff; }
+  .fs-tname { font-size:14px; font-weight:500; color:var(--fs-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fs-tmeta { font:400 11.5px var(--fs-mono); color:var(--fs-dim); margin-top:2px; }
+  .fs-acct { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-radius:14px; background:var(--fs-row); border:1px solid var(--fs-row-border); }
+  .fs-acct .num { font:600 15px var(--fs-mono); color:var(--fs-text); letter-spacing:.5px; }
+  .fs-visa { font:800 italic 16px Georgia,serif; color:var(--fs-text); letter-spacing:-0.5px; }
+  .fs-card-lime { border-radius:16px; background:linear-gradient(135deg,#cdf03f,#a9d827); padding:16px 18px 14px; box-shadow:0 12px 30px rgba(180,224,40,0.25); }
+  .fs-ghost { background:var(--fs-row); border:1px dashed var(--fs-card-border); border-radius:20px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; cursor:pointer; padding:20px; color:var(--fs-dim); min-height:108px; }
+
+  @media (max-width:1120px) { .fs-grid { grid-template-columns:1fr 1fr; } .fs-col:nth-child(3) { grid-column:1 / -1; } }
+  @media (max-width:720px) { .fs-grid { grid-template-columns:1fr; } .fs-col:nth-child(3) { grid-column:auto; } .fs-title { font-size:32px; } }
+  .views.is-home { max-width:1380px; padding-left:28px; padding-right:28px; }
+  .topbar.hide-home { display:none; }
   @media (min-width: 1000px) { .home-grid { grid-template-columns: repeat(3, 1fr); } }
 
   @media (max-width: 860px) {
@@ -1697,6 +1793,14 @@ const ICON_FLAG = ["M5 21V4", "M5 4h12l-2 3 2 3H5"];
 const ICON_STAR = ["M12 3l1.9 4.6L18 9l-4.1 1.4L12 15l-1.9-4.6L6 9l4.1-1.4z"];
 const ICON_TREND = ["M22 7l-8.5 8.5-5-5L2 17", "M16 7h6v6"];
 const ICON_BARS = ["M4 19V5", "M4 19h16", "M8 16v-5", "M13 16V8", "M18 16v-3"];
+const ICON_EXPAND = ["M7 17L17 7", "M17 7H8", "M17 7v9"];
+const ICON_PLUS = ["M12 5v14", "M5 12h14"];
+const ICON_DOWNLOAD = ["M12 3v13", "M7 11l5 5 5-5", "M5 21h14"];
+const ICON_EYE = ["M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z", "M12 9a3 3 0 100 6 3 3 0 100-6"];
+const ICON_CALENDAR = ["M5 4.5h14a1 1 0 011 1V20a1 1 0 01-1 1H5a1 1 0 01-1-1V5.5a1 1 0 011-1z", "M3 9.5h18", "M8 2.5v4", "M16 2.5v4"];
+const ICON_LINECHART = ["M3 3v18h18", "M6 14l3.5-4.5L13 12l5-7"];
+const ICON_UP = ["M12 19V5", "M6 11l6-6 6 6"];
+const ICON_DOWN = ["M12 5v14", "M6 13l6 6 6-6"];
 
 /* ----------------------- SVG CHARTS (presentation) ----------------- *
  * Pure renderers — they take already-computed numbers and draw them.    *
@@ -1745,6 +1849,59 @@ function areaChart(data) {
   svg.appendChild(svgEl("path", { d: line, fill: "none", stroke: "var(--accent)", "stroke-width": "2.5", "stroke-linejoin": "round", "stroke-linecap": "round", class: "chart-line" }));
   const last = pts[pts.length - 1];
   svg.appendChild(svgEl("circle", { cx: last[0].toFixed(1), cy: last[1].toFixed(1), r: "4.5", fill: "var(--accent)", stroke: "var(--bg)", "stroke-width": "2" }));
+  return svg;
+}
+// Money as a mono span with dimmed cents: "$1,234" + faint ".00".  opts.sign adds +/-.
+function fsMoney(n, opts) {
+  opts = opts || {};
+  const neg = n < 0, v = Math.abs(n || 0);
+  const s = v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dot = s.lastIndexOf("."), whole = s.slice(0, dot), dec = s.slice(dot);
+  const prefix = (neg ? "-" : (opts.sign ? "+" : "")) + (opts.spaced ? "$ " : "$");
+  return el("span", { class: "fs-num" + (opts.cls ? " " + opts.cls : "") }, [
+    document.createTextNode(prefix + whole),
+    el("span", { class: "dec", text: dec }),
+  ]);
+}
+// Compact money for goals: "$8.2K", "$580". Returns a plain string.
+function fsCompact(n) {
+  n = n || 0;
+  if (Math.abs(n) >= 1000) return "$" + (n / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return "$" + Math.round(n);
+}
+// Financial-summary area chart: white→transparent fill + lime line + dashed peak marker.
+// points = [{label, value}] (>= 2). Returns just the <svg> (axes are HTML around it).
+function fsArea(points, range) {
+  const W = 600, H = 148, padX = 2, padTop = 22, padBot = 12;
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "none", class: "fs-area-svg" });
+  if (!points || points.length < 2) return svg;
+  const vals = points.map(p => p.value);
+  let min = range && range.min != null ? range.min : Math.min.apply(null, vals);
+  let max = range && range.max != null ? range.max : Math.max.apply(null, vals);
+  if (min === max) max = min + 1;
+  const span = max - min || 1;
+  const innerW = W - padX * 2, plotH = H - padTop - padBot;
+  const X = i => padX + (innerW * i) / (points.length - 1);
+  const Y = v => padTop + plotH - ((v - min) / span) * plotH;
+  const pts = points.map((p, i) => [X(i), Y(p.value)]);
+  let line = "M" + pts[0][0].toFixed(1) + "," + pts[0][1].toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    line += " C" + c1x.toFixed(1) + "," + c1y.toFixed(1) + " " + c2x.toFixed(1) + "," + c2y.toFixed(1) + " " + p2[0].toFixed(1) + "," + p2[1].toFixed(1);
+  }
+  const gid = "fsarea" + (_chartSeq++);
+  svg.appendChild(svgEl("defs", null, svgEl("linearGradient", { id: gid, x1: "0", y1: "0", x2: "0", y2: "1" }, [
+    svgEl("stop", { offset: "0%", "stop-color": "rgba(255,255,255,0.16)" }),
+    svgEl("stop", { offset: "100%", "stop-color": "rgba(255,255,255,0.01)" }),
+  ])));
+  [37, 74, 111].forEach(y => svg.appendChild(svgEl("line", { x1: 0, y1: y, x2: W, y2: y, stroke: "rgba(255,255,255,0.045)" })));
+  svg.appendChild(svgEl("path", { d: line + " L" + pts[pts.length - 1][0].toFixed(1) + "," + H + " L" + pts[0][0].toFixed(1) + "," + H + " Z", fill: "url(#" + gid + ")" }));
+  svg.appendChild(svgEl("path", { d: line, fill: "none", stroke: "var(--accent)", "stroke-width": "2.4", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
+  const last = pts[pts.length - 1];
+  svg.appendChild(svgEl("line", { x1: last[0].toFixed(1), y1: 0, x2: last[0].toFixed(1), y2: H, stroke: "rgba(255,255,255,0.25)", "stroke-dasharray": "3 4" }));
+  svg.appendChild(svgEl("circle", { cx: last[0].toFixed(1), cy: last[1].toFixed(1), r: "5", fill: "var(--accent)", stroke: "#1a1b1c", "stroke-width": "2.5", "vector-effect": "non-scaling-stroke" }));
   return svg;
 }
 // Rounded vertical bar chart, one highlighted. bars = [{label, value, highlight, valueLabel}].
@@ -3881,137 +4038,262 @@ function showView(v) {
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.getAttribute("data-nav") === v));
   document.getElementById("viewTitle").textContent = VIEW_TITLES[v];
   document.querySelector(".topbar").classList.toggle("no-month", !MONTH_VIEWS[v]);
+  const isHome = v === "home";
+  document.querySelector(".topbar").classList.toggle("hide-home", isHome);
+  const viewsEl = document.getElementById("views"); if (viewsEl) viewsEl.classList.toggle("is-home", isHome);
   const sbEl = document.getElementById("sidebar"); if (sbEl) sbEl.classList.remove("open");
-  if (v === "home") renderHome();
+  if (isHome) renderHome();
   window.scrollTo(0, 0);
   const mainEl = document.querySelector(".main"); if (mainEl) mainEl.scrollTop = 0;
 }
 
+function fsToggle(group, btn) {
+  group.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+function fsColor(name) {
+  const pal = ["#0b7cc1", "#7a1420", "#ea4c89", "#b06a16", "#2a6e3f", "#5a3b8a", "#a13a5d", "#1f6e6e"];
+  let h = 0; name = String(name || "?");
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return pal[h % pal.length];
+}
+function fsAxisLabels(max) {
+  const kfmt = v => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0).replace(/\.0$/, "") + "K" : String(Math.round(v));
+  if (!(max > 0)) return ["0", "0", "0", "0", "0"];
+  const step = max / 4;
+  return [4, 3, 2, 1, 0].map(i => kfmt(step * i));
+}
+
+// Home = the "Financial summary" fintech dashboard, populated entirely from
+// the user's real numbers (income, bills, payday plan, goals, cards). Layout +
+// styling ported from the design handoff; all figures come from existing logic.
 function renderHome() {
-  const statRow = document.getElementById("homeStats");
   const grid = document.getElementById("homeGrid");
   const greet = document.getElementById("homeGreeting");
-  if (!statRow || !grid) return;
-  clear(statRow); clear(grid);
+  const statRow = document.getElementById("homeStats");
+  if (!grid || !greet) return;
+  if (statRow) clear(statRow);
+  clear(grid); grid.className = "";
+  const homeView = document.getElementById("homeView");
+  if (homeView) homeView.classList.add("fs-dash");
 
-  // ---- Hero header: "Financial summary" + subtitle + balance chip ----
-  const name = currentUser && currentUser.email ? currentUser.email.split("@")[0] : "";
-  greet.className = "fin-header";
-  clear(greet);
-  greet.appendChild(el("div", { class: "fin-h-left" }, [
-    el("h1", { class: "fin-title", text: "Financial summary" }),
-    el("p", { class: "fin-sub", text: name ? ("Hi " + name.charAt(0).toUpperCase() + name.slice(1) + " — here's where your money stands.") : "Here's where your money stands." }),
-  ]));
-  greet.appendChild(el("div", { class: "balance-chip" }, [
-    el("span", { class: "bc-k", text: "Current cash" }),
-    el("span", { class: "bc-v", text: fmt(currentCash()) }),
-  ]));
-
-  // ---- KPI tiles ----
+  const moneyStr = n => "$" + Math.abs(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const income = totalIncome();
   const monthly = totalMonthlyPayments();
-  const leftover = income - monthly;
-  const debt = state.bills.reduce((s, b) => s + currentBalance(b), 0);
-  const stat = (lbl, val, cls) => el("div", { class: "home-stat" }, [
-    el("div", { class: "lbl", text: lbl }),
-    el("div", { class: "val" + (cls ? " " + cls : ""), text: fmt(val) }),
-  ]);
-  statRow.appendChild(stat("Projected month-end", projectedEOM(), projectedEOM() < 0 ? "neg" : ""));
-  statRow.appendChild(stat("Leftover this month", leftover, leftover >= 0 ? "pos" : "neg"));
-  statRow.appendChild(stat("Total debt", debt, ""));
-
-  const card = (icon, title, nav, children, extraClass) => {
-    const head = el("div", { class: "hc-head" }, [ svgIcon(icon, 18), el("span", { text: title }), el("span", { class: "hc-go", text: "View ›" }) ]);
-    return el("div", { class: "home-card" + (extraClass ? " " + extraClass : ""), on: { click: () => showView(nav) } }, [head].concat(children));
-  };
-  const row = (k, v, color) => el("div", { class: "hc-row" }, [ el("span", { class: "k", text: k }), el("span", { class: "v", style: color ? { color: color } : null, text: v }) ]);
-  const legend = (k, v, color) => el("div", { class: "cl" }, [ el("span", { class: "k", text: k }), el("span", { class: "v", style: color ? { color: color } : null, text: v }) ]);
-
+  const cash = currentCash();
   const plan = buildPaydayPlan();
 
-  // ---- Cash flow area chart: running checking balance across paydays ----
-  const flowPts = [{ label: "Now", value: num(state.bank) }];
-  if (plan && plan.windows.length) plan.windows.forEach(w => flowPts.push({ label: dateShort(w.date).replace(/^\w+, /, ""), value: w.endBalance }));
-  else flowPts.push({ label: "Month-end", value: projectedEOM() });
-  grid.appendChild(card(ICON_TREND, "Cash flow · this month", "plan", [
-    el("div", { class: "chart-wrap" }, [ areaChart(flowPts) ]),
-    el("div", { class: "chart-legend" }, [
-      legend("Income", fmt(income)),
-      legend("Bills", fmt(monthly)),
-      legend("Leftover", fmt(leftover), leftover >= 0 ? "var(--accent)" : "var(--red)"),
+  /* ---------------- HEADER ---------------- */
+  greet.className = "fs-header";
+  clear(greet);
+  greet.appendChild(el("div", null, [
+    el("h1", { class: "fs-title", text: "Financial summary" }),
+    el("p", { class: "fs-subtitle", text: "Track your monthly activities" }),
+  ]));
+  const seg = el("div", { class: "fs-seg" });
+  ["Today", "This month"].forEach((t, i) => seg.appendChild(el("button", { class: "fs-seg-btn" + (i === 1 ? " active" : ""), text: t, on: { click: e => fsToggle(seg, e.currentTarget) } })));
+  seg.appendChild(el("button", { class: "fs-seg-btn", on: { click: e => fsToggle(seg, e.currentTarget) } }, [svgIcon(ICON_CALENDAR, 15), document.createTextNode("Date")]));
+  let masked = false;
+  const balWrap = el("span");
+  const renderBal = () => { clear(balWrap); balWrap.appendChild(masked ? el("span", { class: "fs-balance-amt", text: "••••••" }) : fsMoney(cash, { cls: "fs-balance-amt" })); };
+  renderBal();
+  greet.appendChild(el("div", { class: "fs-hctrls" }, [
+    seg,
+    el("button", { class: "fs-icon-circle", title: "Export a CSV", on: { click: exportCSV } }, [svgIcon(ICON_DOWNLOAD, 20)]),
+    el("div", { class: "fs-balance" }, [
+      el("div", { class: "fs-avatar" }), balWrap,
+      el("span", { class: "fs-eye", title: "Hide balance", on: { click: () => { masked = !masked; renderBal(); } } }, [svgIcon(ICON_EYE, 17)]),
     ]),
-  ], "chart-area"));
+  ]));
 
-  // ---- Top spending bar chart: monthly payments by bill (biggest highlighted) ----
-  const spend = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(s => s.value > 0).sort((a, b) => b.value - a.value).slice(0, 5);
-  if (spend.length) {
-    const maxV = spend[0].value;
-    const bars = spend.map(s => ({
-      label: s.name.length > 8 ? s.name.slice(0, 7) + "…" : s.name,
-      value: s.value, highlight: s.value === maxV,
-      valueLabel: "$" + Math.round(s.value).toLocaleString("en-US"),
-    }));
-    grid.appendChild(card(ICON_BARS, "Top spending", "bills", [
-      el("div", { class: "chart-wrap" }, [ barChart(bars) ]),
-    ], "chart-bars"));
-  }
+  /* ---------------- COLUMN A ---------------- */
+  const anaTabs = el("div", { class: "fs-tabs" });
+  ["Expenses", "Income"].forEach((t, i) => anaTabs.appendChild(el("button", { class: "fs-tab" + (i === 0 ? " active" : ""), text: t, on: { click: e => fsToggle(anaTabs, e.currentTarget) } })));
+  const ana = el("div", { class: "fs-card", style: { padding: "22px 24px 18px" } }, [
+    el("div", { class: "fs-chead" }, [
+      el("h3", { class: "fs-ctitle", text: "Analytics" }),
+      el("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, [
+        anaTabs,
+        el("button", { class: "fs-iconsq", style: { color: "var(--accent)" } }, [svgIcon(ICON_LINECHART, 17)]),
+        el("button", { class: "fs-iconsq", style: { color: "var(--fs-dim)" }, on: { click: () => showView("plan") } }, [svgIcon(ICON_EXPAND, 16)]),
+      ]),
+    ]),
+  ]);
+  const topBills = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).sort((a, b) => b.value - a.value);
+  const statsRow = el("div", { style: { display: "flex", gap: "26px", marginTop: "22px", flexWrap: "wrap" } });
+  topBills.slice(0, 3).forEach(b => statsRow.appendChild(el("div", null, [
+    el("div", { class: "fs-cat" }, [
+      el("span", { style: { width: "9px", height: "9px", borderRadius: "3px", background: fsColor(b.name), display: "inline-block", flex: "none" } }),
+      el("span", { class: "nm", text: b.name.length > 12 ? b.name.slice(0, 11) + "…" : b.name }),
+    ]),
+    el("div", { class: "fs-statamt" }, [fsMoney(b.value)]),
+  ])));
+  ana.appendChild(statsRow);
+  const flowPts = [{ value: num(state.bank) }];
+  if (plan && plan.windows.length) plan.windows.forEach(w => flowPts.push({ value: w.endBalance, date: w.date }));
+  else flowPts.push({ value: projectedEOM() });
+  const fv = flowPts.map(p => p.value);
+  let fmin = Math.min.apply(null, fv), fmax = Math.max.apply(null, fv);
+  if (fmin === fmax) fmax = fmin + 1;
+  const kFmt = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "K" : String(Math.round(v));
+  const yaxis = el("div", { class: "fs-yaxis" });
+  [0, 1, 2, 3, 4].forEach(i => yaxis.appendChild(el("span", { text: kFmt(fmax - (fmax - fmin) * i / 4) })));
+  const tipAmt = fsMoney(flowPts[flowPts.length - 1].value); tipAmt.className = "v";
+  ana.appendChild(el("div", { class: "fs-area-wrap", style: { height: "172px" } }, [
+    fsArea(flowPts, { min: fmin, max: fmax }), yaxis,
+    el("div", { class: "fs-tooltip", style: { left: "56%", top: "28px" } }, [el("span", { class: "nm2", text: "Projected" }), tipAmt]),
+    el("div", { class: "fs-xaxis" }, [
+      el("span", { text: "Now" }),
+      el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[Math.floor(plan.windows.length / 2)].date).replace(/^\w+, /, "") : "" }),
+      el("span", { text: plan && plan.windows.length ? dateShort(plan.windows[plan.windows.length - 1].date).replace(/^\w+, /, "") : "Month-end" }),
+    ]),
+  ]));
 
-  // ---- Next paycheck ----
-  if (plan && plan.windows.length) {
-    const w = plan.windows[0];
-    grid.appendChild(card(ICON_CAL, "Next paycheck · " + dateShort(w.date).replace(/^\w+, /, ""), "plan", [
-      row("Bills", fmt(w.minTotal)),
-      row("Debt plan", fmt(w.extraTotal), "var(--accent)"),
-      row("Goals (leftover)", fmt(w.goalLeftover)),
-      row("Fun money", fmt(w.funEarmark)),
-    ]));
-  }
+  const expand = () => el("span", { class: "fs-expand" }, [svgIcon(ICON_EXPAND, 17)]);
+  const incCard = el("div", { class: "fs-card", style: { padding: "22px 24px", cursor: "pointer" }, on: { click: () => showView("income") } }, [
+    el("div", { class: "fs-chead" }, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Income" }), expand()]),
+    el("div", { class: "fs-badge", style: { marginTop: "24px", fontSize: "12px", color: "var(--fs-dim)" } }, [el("span", { class: "fs-mono", text: "This month" })]),
+    el("div", { class: "fs-bigamt", style: { marginTop: "10px" } }, [fsMoney(income, { spaced: true })]),
+  ]);
+  const pctInc = income > 0 ? Math.round(monthly / income * 100) : 0;
+  const expCard = el("div", { class: "fs-card", style: { padding: "22px 24px", cursor: "pointer" }, on: { click: () => showView("bills") } }, [
+    el("div", { class: "fs-chead" }, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Expenses" }), expand()]),
+    el("div", { class: "fs-badge " + (monthly <= income ? "up" : "down"), style: { marginTop: "24px", fontSize: "12px" } }, [
+      svgIcon(monthly <= income ? ICON_DOWN : ICON_UP, 11),
+      document.createTextNode(pctInc + "% "),
+      el("span", { style: { color: "var(--fs-dim)" }, text: "of income" }),
+    ]),
+    el("div", { class: "fs-bigamt", style: { marginTop: "10px" } }, [fsMoney(monthly, { spaced: true })]),
+  ]);
+  const ieRow = el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "13px" } }, [incCard, expCard]);
 
-  // ---- Credit utilization ----
+  const smallExpand = () => el("span", { class: "fs-iconsq", style: { width: "28px", height: "28px", borderRadius: "9px" } }, [svgIcon(ICON_EXPAND, 14)]);
+  const subCount = state.bills.length;
+  const subCard = el("div", { class: "fs-card", style: { padding: "20px 22px", cursor: "pointer" }, on: { click: () => showView("bills") } }, [
+    el("div", { class: "fs-chead" }, [el("h3", { class: "fs-ctitle", style: { fontSize: "16px" }, text: "Bills" }), smallExpand()]),
+    el("div", { class: "fs-badge up", style: { marginTop: "22px", fontSize: "12px" } }, [document.createTextNode(subCount + " "), el("span", { style: { color: "var(--fs-dim)" }, text: "total" })]),
+    el("div", { style: { marginTop: "8px", font: "700 28px var(--fs-mono)", color: "var(--fs-bright)" }, text: String(subCount) }),
+  ]);
   const util = overallUtilization();
-  if (util != null) {
-    const cls = utilClass(util);
-    const color = cls === "lo" ? "var(--accent)" : cls === "mid" ? "#e0a83c" : "var(--red)";
-    grid.appendChild(card(ICON_CARD, "Credit utilization", "bills", [
-      el("div", { class: "hc-big", style: { color: color }, text: Math.round(util * 100) + "%" }),
-      el("div", { class: "home-bar" }, [ el("span", { style: { width: Math.min(100, util * 100) + "%", background: color } }) ]),
-      el("div", { class: "hc-sub", text: util < 0.1 ? "Looking great — keep cards under 10% when they report." : "Pay your cards down before they report to protect your score." }),
-    ]));
-  }
+  const utilCard = el("div", { class: "fs-card", style: { padding: "20px 22px", cursor: "pointer" }, on: { click: () => showView("bills") } }, [
+    el("div", { class: "fs-chead" }, [el("h3", { class: "fs-ctitle", style: { fontSize: "16px" }, text: "Credit" }), smallExpand()]),
+    el("div", { style: { marginTop: "22px", fontSize: "12.5px", color: "var(--fs-mid)" }, text: "Utilization" }),
+    el("div", { style: { marginTop: "8px", font: "700 28px var(--fs-mono)", color: util != null && util < 0.3 ? "var(--accent)" : "var(--fs-bright)" }, text: util != null ? Math.round(util * 100) + "%" : "—" }),
+  ]);
+  const addCard = el("div", { class: "fs-ghost", on: { click: () => showView("bills") } }, [
+    el("span", { style: { width: "34px", height: "34px", borderRadius: "11px", background: "var(--fs-row)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fs-mid)" } }, [svgIcon(ICON_PLUS, 17)]),
+    el("span", { style: { fontSize: "13.5px" }, text: "Add a bill" }),
+  ]);
+  const threeUp = el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "13px" } }, [subCard, utilCard, addCard]);
 
-  // ---- Debt remaining ----
-  if (debt > 0) {
-    grid.appendChild(card(ICON_FILE, "Debt remaining", "bills", [
-      el("div", { class: "hc-big", text: fmt(debt) }),
-      el("div", { class: "hc-sub", text: "Monthly payments " + fmt(monthly) + (plan && plan.totalExtra > 0 ? " · plan sends " + fmt(plan.totalExtra) + " extra this month" : "") }),
-    ]));
-  }
+  const colA = el("div", { class: "fs-col" }, [ana, ieRow, threeUp]);
 
-  // ---- My savings (emergency + first goal) ----
-  const efTarget = emergencyTarget(), efSaved = num(state.emergencySaved);
-  const efPct = efTarget > 0 ? Math.min(100, efSaved / efTarget * 100) : 0;
-  const goalsChildren = [
-    row("Emergency fund", efTarget > 0 ? Math.round(efPct) + "%" : "—"),
-    el("div", { class: "home-bar" }, [ el("span", { style: { width: efPct + "%", background: "var(--accent)" } }) ]),
-  ];
-  if (state.goals.length) {
-    const g = state.goals[0];
-    const gp = num(g.target) > 0 ? Math.min(100, num(g.saved) / num(g.target) * 100) : 0;
-    goalsChildren.push(row(g.name || "Goal", num(g.target) > 0 ? Math.round(gp) + "%" : "—"));
-    goalsChildren.push(el("div", { class: "home-bar" }, [ el("span", { style: { width: gp + "%", background: "var(--accent)" } }) ]));
+  /* ---------------- COLUMN B ---------------- */
+  const ts = el("div", { class: "fs-card", style: { padding: "22px 22px 16px" } }, [
+    el("div", { class: "fs-chead", style: { alignItems: "flex-start" } }, [
+      el("h3", { class: "fs-ctitle", text: "Total spending" }),
+      el("div", { style: { textAlign: "right" } }, [el("div", { style: { font: "600 12px var(--fs-mono)", color: "var(--fs-dim)" }, text: "per month" })]),
+    ]),
+    el("div", { style: { marginTop: "6px" } }, [(function () { const a = fsMoney(monthly); a.style.font = "700 31px var(--fs-mono)"; a.style.letterSpacing = "-1px"; a.style.color = "var(--fs-bright)"; return a; })()]),
+  ]);
+  const billsBar = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).slice(0, 8);
+  if (billsBar.length) {
+    const maxBar = Math.max.apply(null, billsBar.map(x => x.value).concat([1]));
+    const barsWrap = el("div", { class: "fs-bars" });
+    const chips = el("div", { class: "fs-chips" });
+    billsBar.forEach(b => {
+      const hi = b.value === maxBar;
+      const hPct = Math.max(14, Math.round(b.value / maxBar * 100));
+      barsWrap.appendChild(el("div", { class: "fs-barcol" }, [
+        el("div", { class: "fs-bar" + (hi ? " hi" : ""), style: { height: hPct + "%" } }, [el("span", { class: "vlabel", text: "$ " + Math.round(b.value).toLocaleString("en-US") })]),
+      ]));
+      chips.appendChild(el("div", { class: "fs-chip" }, [el("span", { style: { background: hi ? "var(--accent)" : fsColor(b.name), color: hi ? "#1a1b0c" : "#fff" }, text: b.name.charAt(0).toUpperCase() })]));
+    });
+    ts.appendChild(el("div", { style: { marginTop: "18px" } }, [barsWrap, chips]));
+  }
+  const sav = el("div", { class: "fs-card", style: { padding: "22px 22px" } });
+  const savings = [];
+  const efT = emergencyTarget(), efS = num(state.emergencySaved);
+  if (efT > 0 || efS > 0) savings.push({ name: "Emergency fund", saved: efS, target: efT });
+  state.goals.forEach(g => savings.push({ name: g.name || "Goal", saved: num(g.saved), target: num(g.target) }));
+  sav.appendChild(el("div", { class: "fs-chead", style: { alignItems: "flex-start" } }, [
+    el("div", null, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "My Savings" }), el("p", { style: { margin: "5px 0 0", fontSize: "12.5px", color: "var(--fs-dim)" }, text: "You have " + savings.length + (savings.length === 1 ? " goal" : " goals") })]),
+    el("button", { class: "fs-iconsq", style: { borderRadius: "11px", color: "var(--fs-mid)" }, on: { click: () => showView("goals") } }, [svgIcon(ICON_PLUS, 16)]),
+  ]));
+  if (savings.length) {
+    savings.slice(0, 3).forEach((g, i) => {
+      const pct = g.target > 0 ? Math.min(100, g.saved / g.target * 100) : 0;
+      if (i > 0) sav.appendChild(el("div", { class: "fs-hairline" }));
+      sav.appendChild(el("div", { style: { marginTop: i === 0 ? "20px" : "0" } }, [
+        el("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, [
+          el("div", { class: "fs-prog" }, [el("span", { style: { width: pct + "%" } })]),
+          el("span", { style: { font: "600 12px var(--fs-mono)", color: "var(--fs-mid)" }, text: pct.toFixed(1) + "%" }),
+        ]),
+        el("div", { style: { marginTop: "12px", display: "flex", alignItems: "flex-end", justifyContent: "space-between" } }, [
+          el("div", null, [
+            el("div", { style: { font: "700 25px var(--fs-mono)", color: "var(--fs-bright)" }, text: fsCompact(g.saved) }),
+            el("div", { style: { marginTop: "3px", fontSize: "12.5px", color: "var(--fs-dim)" }, text: g.name }),
+          ]),
+          el("div", { class: "fs-badge up", style: { fontSize: "12px" } }, [svgIcon(ICON_UP, 10), el("span", { style: { color: "var(--fs-mid)" }, text: "Goal " + (g.target > 0 ? fsCompact(g.target) : "—") })]),
+        ]),
+      ]));
+    });
   } else {
-    goalsChildren.push(el("div", { class: "hc-sub", text: "Add a goal to start tracking toward it." }));
+    sav.appendChild(el("div", { style: { marginTop: "18px", fontSize: "13px", color: "var(--fs-dim)" }, text: "Add a savings goal to track it here." }));
   }
-  grid.appendChild(card(ICON_FLAG, "My savings", "goals", goalsChildren));
+  const colB = el("div", { class: "fs-col" }, [ts, sav]);
 
-  // ---- Coach (featured lime card, full width) ----
-  grid.appendChild(card(ICON_STAR, "AI Money Coach", "coach", [
-    el("div", { class: "hc-sub", text: "Ask anything about your money, or get a full read on where you stand and your best next move." }),
-  ], "coach"));
+  /* ---------------- COLUMN C ---------------- */
+  const tx = el("div", { class: "fs-card", style: { padding: "22px 22px 8px" } });
+  let ups = [];
+  if (plan && plan.windows.length) ups = plan.windows[0].bills.slice(0, 5).map(x => ({ name: (x.bill && x.bill.name) || "Bill", amount: x.amount, date: x.date, paid: x.paid }));
+  if (!ups.length) ups = state.bills.slice(0, 5).map(b => ({ name: b.name || "Bill", amount: monthlyPayment(b), date: null }));
+  tx.appendChild(el("div", { class: "fs-chead", style: { alignItems: "flex-start" } }, [
+    el("div", null, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Upcoming bills" }), el("p", { style: { margin: "5px 0 0", fontSize: "12px", color: "var(--fs-dim)" }, text: ups.length + " due next" })]),
+    el("span", { class: "fs-expand", on: { click: () => showView("plan") } }, [svgIcon(ICON_EXPAND, 17)]),
+  ]));
+  const txList = el("div", { style: { marginTop: "12px", display: "flex", flexDirection: "column" } });
+  ups.forEach(u => {
+    const amt = fsMoney(u.amount); amt.style.font = "600 13px var(--fs-mono)";
+    txList.appendChild(el("div", { class: "fs-trow" }, [
+      el("div", { class: "fs-logo", style: { background: fsColor(u.name) } }, [document.createTextNode(String(u.name).charAt(0).toUpperCase())]),
+      el("div", { style: { flex: "1", minWidth: "0" } }, [
+        el("div", { class: "fs-tname", text: u.name }),
+        el("div", { class: "fs-tmeta", text: u.date ? ("Due " + dateShort(u.date).replace(/^\w+, /, "")) : "Monthly" }),
+      ]),
+      amt,
+    ]));
+  });
+  if (!ups.length) txList.appendChild(el("div", { style: { padding: "14px 0", fontSize: "13px", color: "var(--fs-dim)" }, text: "No bills yet." }));
+  tx.appendChild(txList);
 
-  if (!plan && util == null && debt <= 0 && !spend.length) {
-    grid.appendChild(el("div", { class: "home-empty", text: "Add your income and bills (Income and Bills tabs) to bring your dashboard to life." }));
+  const acct = el("div", { class: "fs-card", style: { padding: "22px 22px" } }, [
+    el("div", { class: "fs-chead" }, [
+      el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "My Accounts" }),
+      el("button", { class: "fs-iconsq", style: { borderRadius: "11px", color: "var(--fs-mid)" }, on: { click: () => showView("bills") } }, [svgIcon(ICON_PLUS, 16)]),
+    ]),
+  ]);
+  const accWrap = el("div", { style: { marginTop: "18px", display: "flex", flexDirection: "column", gap: "11px" } });
+  accWrap.appendChild(el("div", { class: "fs-acct" }, [el("span", { class: "num", text: "Checking" }), (function () { const a = fsMoney(num(state.bank)); a.style.fontWeight = "600"; return a; })()]));
+  const cards = state.bills.filter(b => b.type === "Credit Card Debt");
+  cards.slice(0, 2).forEach(c => accWrap.appendChild(el("div", { class: "fs-acct" }, [el("span", { class: "num", text: c.name || "Card" }), fsMoney(currentBalance(c))])));
+  if (cards.length) {
+    const top = cards.slice().sort((a, b) => currentBalance(b) - currentBalance(a))[0];
+    accWrap.appendChild(el("div", { class: "fs-card-lime" }, [
+      el("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } }, [
+        el("span", { class: "num", style: { color: "#1a1b0c" }, text: top.name || "Card" }),
+        el("span", { class: "fs-visa", style: { color: "#1a1b0c" }, text: num(top.creditLimit) > 0 ? "CARD" : "LOAN" }),
+      ]),
+      el("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: "26px" } }, [
+        el("span", { style: { font: "700 17px var(--fs-mono)", color: "#1a1b0c" }, text: moneyStr(currentBalance(top)) }),
+        el("span", { style: { font: "600 12px var(--fs-mono)", color: "#3a3d1a" }, text: num(top.creditLimit) > 0 ? "of " + moneyStr(num(top.creditLimit)) : "balance" }),
+      ]),
+    ]));
   }
+  acct.appendChild(accWrap);
+  const colC = el("div", { class: "fs-col" }, [tx, acct]);
+
+  grid.appendChild(el("div", { class: "fs-grid" }, [colA, colB, colC]));
 }
 
 /* --------------------------- WIRE UP ------------------------------ */
