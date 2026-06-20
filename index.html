@@ -3714,6 +3714,13 @@ async function getAuthToken() {
 let plaidBusy = false;
 function plaidSetStatus(msg) { const e = document.getElementById("plaidStatus"); if (e) e.textContent = msg; }
 
+// The link_token is persisted across the OAuth redirect so Link can resume with
+// the SAME token when the user returns from the bank (a new token won't work).
+const PLAID_LT_KEY = "plaid_link_token";
+function plaidSaveLinkToken(t) { try { localStorage.setItem(PLAID_LT_KEY, t); } catch (e) {} }
+function plaidGetLinkToken() { try { return localStorage.getItem(PLAID_LT_KEY); } catch (e) { return null; } }
+function plaidClearLinkToken() { try { localStorage.removeItem(PLAID_LT_KEY); } catch (e) {} }
+
 async function plaidConnect() {
   if (plaidBusy) return;
   if (!currentUser) { plaidSetStatus("Sign in first to connect a bank."); return; }
@@ -3723,20 +3730,28 @@ async function plaidConnect() {
 
   plaidBusy = true;
   plaidSetStatus("Starting secure connection…");
-  let linkToken;
   try {
     const r = await fetch("/api/plaid/create-link-token", { method: "POST", headers: { Authorization: "Bearer " + token } });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "link token failed");
-    linkToken = d.link_token;
+    plaidSaveLinkToken(d.link_token);
+    plaidOpenLink(d.link_token);
   } catch (e) {
-    plaidBusy = false; plaidSetStatus("Couldn't start the connection — make sure Plaid keys are set in Vercel."); return;
+    plaidBusy = false; plaidSetStatus("Couldn't start the connection — make sure Plaid keys are set in Vercel.");
   }
+}
 
-  const handler = window.Plaid.create({
+// Build and open Plaid Link. On an OAuth return, pass receivedRedirectUri so
+// Link resumes the in-progress session instead of starting over.
+function plaidOpenLink(linkToken, receivedRedirectUri) {
+  if (!window.Plaid) { plaidBusy = false; plaidSetStatus("Couldn't load Plaid — retry."); return; }
+  const cfg = {
     token: linkToken,
     onSuccess: async (public_token, metadata) => {
       plaidSetStatus("Linking your bank…");
+      plaidClearLinkToken();
+      const token = await getAuthToken();
+      if (!token) { plaidBusy = false; plaidSetStatus("Your session expired — sign in again."); return; }
       try {
         const r = await fetch("/api/plaid/exchange-token", {
           method: "POST",
@@ -3746,12 +3761,25 @@ async function plaidConnect() {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || "exchange failed");
         plaidBusy = false;
-        await plaidSync(true);
+        await plaidSync();
       } catch (e) { plaidBusy = false; plaidSetStatus("Couldn't finish connecting — try again."); }
     },
-    onExit: (err) => { plaidBusy = false; plaidSetStatus(err ? "Connection cancelled." : "Connect your bank to auto-fill balances and cards."); },
-  });
-  handler.open();
+    onExit: (err) => { plaidBusy = false; plaidClearLinkToken(); plaidSetStatus(err ? "Connection cancelled." : "Connect your bank to auto-fill balances and cards."); },
+  };
+  if (receivedRedirectUri) cfg.receivedRedirectUri = receivedRedirectUri;
+  window.Plaid.create(cfg).open();
+}
+
+// If the page loaded as an OAuth redirect back from a bank, resume Link.
+function plaidCheckOAuthReturn() {
+  try {
+    if (!new URLSearchParams(window.location.search).get("oauth_state_id")) return;
+    const linkToken = plaidGetLinkToken();
+    if (!linkToken || !window.Plaid) return;
+    plaidBusy = true;
+    plaidSetStatus("Resuming bank connection…");
+    plaidOpenLink(linkToken, window.location.href);
+  } catch (e) {}
 }
 
 async function plaidSync() {
@@ -4702,6 +4730,7 @@ function init() {
   // Plaid bank connection
   document.getElementById("plaidConnectBtn").addEventListener("click", plaidConnect);
   document.getElementById("plaidSyncBtn").addEventListener("click", () => plaidSync(false));
+  plaidCheckOAuthReturn(); // resume Link if we're returning from a bank's OAuth page
 
   // AI money coach
   document.getElementById("analyzeBtn").addEventListener("click", () => runAdvisor(""));
