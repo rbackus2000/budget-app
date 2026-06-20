@@ -3575,6 +3575,27 @@ function buildSnapshot() {
         note: "income = recurring deposits (jobs); recurringBills = recurring outflow; otherSpending = variable one-off purchases. Commission is still variable and not part of detectedMonthlyIncome unless it recurs.",
       };
     })(),
+    // Affordability inputs so the coach can answer "can I afford X?" with
+    // caveats (e.g. all cards paid off, or trading a vehicle).
+    affordability: (function () {
+      const net = affNetMonthlyIncome();
+      const cc = state.bills.reduce((s, b) => s + (b.type === "Credit Card Debt" ? monthlyPayment(b) : 0), 0);
+      const loans = state.bills.reduce((s, b) => s + (b.type === "Other Debt / Loan" ? monthlyPayment(b) : 0), 0);
+      const living = monthlyLivingExpenses();
+      const allOut = totalMonthlyPayments() + living;
+      return {
+        creditScore: num(state.creditScore) || null,
+        recurringMonthlyIncomeNet: +net.toFixed(2),
+        estMonthlyIncomeGross: net > 0 ? +(net / 0.78).toFixed(2) : null,
+        monthlyDebtPayments: { creditCards: +cc.toFixed(2), loans: +loans.toFixed(2), total: +(cc + loans).toFixed(2) },
+        monthlyLivingExpenses: +living.toFixed(2),
+        currentMonthlyLeftover: +(net - allOut).toFixed(2),
+        loanBills: state.bills.filter(b => b.type === "Other Debt / Loan")
+          .map(b => ({ name: b.name, monthlyPayment: +monthlyPayment(b).toFixed(2), balance: +currentBalance(b).toFixed(2), aprPct: num(b.apr) })),
+        scenario: state.afford || null,
+        note: "recurringMonthlyIncomeNet excludes commission (variable income — never assume it recurs). For an 'if all credit cards are paid off' scenario, remove monthlyDebtPayments.creditCards from obligations (and treat those balances as gone). If trading a vehicle for a new one, REMOVE the traded loan's monthlyPayment (find it in loanBills) before adding the new payment. Lender DTI guide: total monthly debt incl. new payment ÷ gross income ≤36% comfortable, ~43% max; housing ≤28% of gross. Estimated APR by credit score (editable, ESTIMATE) — auto: 780+≈6%, 720+≈7%, 690+≈8.5%, 660+≈10%, 620+≈13%, 580+≈16%, below≈19% (boat/RV +1.5%); mortgage: 760+≈6.5% down to ~8.9% at 620 and 620-below usually FHA-only. Always recommend raising the score first if subprime.",
+      };
+    })(),
   };
 }
 
