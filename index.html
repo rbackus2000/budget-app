@@ -1344,6 +1344,7 @@
       </div>
     </div>
     <div id="plaidStatus" class="hint" style="margin-top:6px">Connect your bank to pull real balances, credit-card APR/limit/due dates, and spending automatically. Bank-level encryption; your login is never seen by this app.</div>
+    <div id="plaidSpending" class="hint" style="margin-top:6px"></div>
   </section>
 
   <!-- PLAN SELECTOR + CATEGORIES -->
@@ -2093,9 +2094,28 @@ const totalLoggedPayments = () => state.bills.reduce((s, b) => s + paidTotal(b),
 const currentCash = () => num(state.bank) - totalLoggedPayments();
 const projectedEOM = () => num(state.bank) + totalIncome() - totalMonthlyPayments();
 
-// Monthly "living expenses" = the monthly-equivalent of bills tagged Needs.
-// Drives the emergency-fund target (this many months of living expenses).
-const monthlyLivingExpenses = () => state.bills.reduce((s, b) => s + (b.bucket === "needs" ? monthlyPayment(b) : 0), 0);
+// Plaid spending categories that count as essential living costs.
+const ESSENTIAL_PFC = ["RENT_AND_UTILITIES", "FOOD_AND_DRINK", "TRANSPORTATION", "MEDICAL", "PERSONAL_CARE", "GENERAL_SERVICES"];
+
+// Real monthly essential spend measured from the bank feed (90-day average),
+// or 0 if no Plaid data. This captures variable costs (groceries, gas,
+// utilities) that fixed bills don't.
+function realMonthlyEssentials() {
+  const sp = state.plaidSpending;
+  if (!sp || !Array.isArray(sp.byCategory)) return 0;
+  const essential = sp.byCategory.reduce((s, c) => s + (ESSENTIAL_PFC.indexOf(c.category) >= 0 ? num(c.amount) : 0), 0);
+  return essential > 0 ? essential / 3 : 0; // 90 days requested ≈ 3 months
+}
+
+// Monthly "living expenses": when a bank is connected, use the real measured
+// essential spend (it already includes rent, utilities, groceries, gas that
+// fixed bills miss); otherwise fall back to the monthly-equivalent of bills
+// tagged Needs. Drives the emergency-fund target.
+function monthlyLivingExpenses() {
+  const real = realMonthlyEssentials();
+  if (real > 0) return real;
+  return state.bills.reduce((s, b) => s + (b.bucket === "needs" ? monthlyPayment(b) : 0), 0);
+}
 const emergencyTarget = () => monthlyLivingExpenses() * (num(state.emergencyMonths) || 3);
 
 // Rows whose payment panel is currently expanded (in-memory only, not persisted).
@@ -3800,11 +3820,31 @@ function plaidApply(d) {
 function plaidRefreshUI() {
   const sync = document.getElementById("plaidSyncBtn");
   const connect = document.getElementById("plaidConnectBtn");
-  if (!sync || !connect) return;
-  if (state.plaidSyncedAt) {
+  if (sync && connect && state.plaidSyncedAt) {
     sync.style.display = "";
     connect.textContent = "🔗 Connect another bank";
   }
+  plaidRenderSpending();
+}
+
+// PFC primary code → readable label.
+function prettyCat(code) {
+  return String(code || "").toLowerCase().replace(/_/g, " ").replace(/\band\b/g, "&")
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Show the real-spending readout and note that it now drives living expenses.
+function plaidRenderSpending() {
+  const el = document.getElementById("plaidSpending");
+  if (!el) return;
+  const sp = state.plaidSpending;
+  if (!sp || !sp.total) { el.textContent = ""; return; }
+  const mo = realMonthlyEssentials();
+  const top = (sp.byCategory || []).slice(0, 4).map(c => prettyCat(c.category) + " $" + Math.round(num(c.amount))).join(" · ");
+  el.textContent =
+    "Real spending (90-day): $" + Math.round(num(sp.total)) + " across " + (sp.count || 0) + " transactions" +
+    (mo > 0 ? " · essentials ≈ $" + Math.round(mo) + "/mo (now drives living expenses + emergency target)" : "") +
+    (top ? " — top: " + top : "");
 }
 
 // Run async fn over items with a small concurrency cap (don't hammer the API).
