@@ -1,0 +1,311 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Budget Planner — Read-Only Finance API",
+    "description": "Read-only access to the owner's personal budget: financial summary, bills, credit cards, payment calendar, and debts. All numbers are precomputed by the Budget Planner app; data is as fresh as the last time the app was opened (see updatedAt). Nothing here can modify data.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://budget-app-zeta-three.vercel.app" }
+  ],
+  "security": [ { "bearerAuth": [] } ],
+  "paths": {
+    "/api/v1/snapshot": {
+      "get": {
+        "operationId": "getSnapshot",
+        "summary": "Everything in one call: financial summary, all bills, credit cards, payment calendar, goals, and debt plan. Prefer this when you need the full picture.",
+        "responses": {
+          "200": {
+            "description": "Full snapshot",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Snapshot" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/financial-summary": {
+      "get": {
+        "operationId": "getFinancialSummary",
+        "summary": "Top-line money picture: income, leftover, plan, emergency fund, goals, overall utilization.",
+        "responses": {
+          "200": {
+            "description": "Financial summary",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FinancialSummary" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/bills": {
+      "get": {
+        "operationId": "getBills",
+        "summary": "Every recurring bill and debt with balance, payment, frequency, APR, due day, and payoff timeline.",
+        "responses": {
+          "200": {
+            "description": "List of bills",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BillsResponse" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/credit-cards": {
+      "get": {
+        "operationId": "getCreditCards",
+        "summary": "Credit cards only, with per-card utilization, statement close date, and report-safe pay-by date.",
+        "responses": {
+          "200": {
+            "description": "Credit cards",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreditCardsResponse" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/payment-calendar": {
+      "get": {
+        "operationId": "getPaymentCalendar",
+        "summary": "Per-payday schedule: which paycheck covers which bills, extra sent to debt, amount to goals, and projected bank balance after each payday.",
+        "responses": {
+          "200": {
+            "description": "Payment calendar",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PaymentCalendarResponse" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/debts": {
+      "get": {
+        "operationId": "getDebts",
+        "summary": "Outstanding debts with balance, APR, monthly payment, payoff months, and the extra-payment plan.",
+        "responses": {
+          "200": {
+            "description": "Debts",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DebtsResponse" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Static API key. Sent as: Authorization: Bearer <READ_API_KEY>"
+      }
+    },
+    "schemas": {
+      "Meta": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string", "description": "The snapshot's own 'today' date (YYYY-MM-DD)." },
+          "updatedAt": { "type": "string", "description": "When the app last saved this data (ISO timestamp)." }
+        }
+      },
+      "Income": {
+        "type": "object",
+        "properties": {
+          "thisMonth": { "type": "number", "description": "Total income recognized this month." },
+          "startingBank": { "type": "number" },
+          "currentCash": { "type": "number" },
+          "projectedMonthEnd": { "type": "number" },
+          "commission": { "type": "number", "description": "This month's commission only — variable, non-recurring." },
+          "commissionSplit": { "type": "string" }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "bucketPercents": {
+            "type": "object",
+            "properties": {
+              "needs": { "type": "number" },
+              "wants": { "type": "number" },
+              "savings": { "type": "number" }
+            }
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "pct": { "type": "number" },
+                "bucket": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "EmergencyFund": {
+        "type": "object",
+        "properties": {
+          "saved": { "type": "number" },
+          "targetMonths": { "type": "number" },
+          "target": { "type": "number" },
+          "monthsCovered": { "type": ["number", "null"] },
+          "achieveBy": { "type": ["string", "null"] },
+          "monthlyNeeded": { "type": ["number", "null"] }
+        }
+      },
+      "Goal": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "target": { "type": "number" },
+          "saved": { "type": "number" },
+          "achieveBy": { "type": ["string", "null"] },
+          "monthlyNeeded": { "type": ["number", "null"] }
+        }
+      },
+      "DebtPlan": {
+        "type": "object",
+        "properties": {
+          "fundingModel": { "type": "string" },
+          "monthlyExtraToDebt": { "type": "number" },
+          "monthlyToGoals": { "type": "number" }
+        }
+      },
+      "Bill": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string", "description": "e.g. 'Credit Card Debt'." },
+          "bucket": { "type": "string" },
+          "remainingBalance": { "type": "number" },
+          "originalBalance": { "type": "number" },
+          "monthlyPayment": { "type": "number" },
+          "frequency": { "type": "string" },
+          "aprPct": { "type": "number" },
+          "dueDay": { "type": ["integer", "null"] },
+          "payoffMonths": { "description": "Number of months, 'never_at_this_payment', or null." },
+          "creditLimit": { "type": ["number", "null"] },
+          "utilizationPct": { "type": ["number", "null"] },
+          "statementClosingDay": { "type": ["integer", "null"] },
+          "nextStatementClose": { "type": ["string", "null"] },
+          "payBySafeDate": { "type": ["string", "null"] },
+          "targetReportBalance": { "type": ["number", "null"] }
+        }
+      },
+      "CalendarBill": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "amount": { "type": "number" },
+          "dueDate": { "type": ["string", "null"] },
+          "paid": { "type": "boolean" },
+          "early": { "type": "boolean" },
+          "deferred": { "type": "boolean" }
+        }
+      },
+      "ExtraDebtPayment": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "amount": { "type": "number" }
+        }
+      },
+      "Payday": {
+        "type": "object",
+        "properties": {
+          "payday": { "type": ["string", "null"] },
+          "income": { "type": "number" },
+          "sources": { "type": "array", "items": { "type": "string" } },
+          "startingBalance": { "type": "number" },
+          "projectedBalanceAfter": { "type": "number" },
+          "shortfall": { "type": "number" },
+          "bills": { "type": "array", "items": { "$ref": "#/components/schemas/CalendarBill" } },
+          "extraDebtPayments": { "type": "array", "items": { "$ref": "#/components/schemas/ExtraDebtPayment" } },
+          "toGoals": { "type": "number" }
+        }
+      },
+      "DebtItem": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "remainingBalance": { "type": "number" },
+          "aprPct": { "type": "number" },
+          "monthlyPayment": { "type": "number" },
+          "payoffMonths": { "description": "Months, 'never_at_this_payment', or null." },
+          "creditLimit": { "type": ["number", "null"] },
+          "utilizationPct": { "type": ["number", "null"] }
+        }
+      },
+      "FinancialSummary": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "plan": { "$ref": "#/components/schemas/Plan" },
+          "income": { "$ref": "#/components/schemas/Income" },
+          "monthlyPayments": { "type": "number" },
+          "leftover": { "type": "number" },
+          "monthlyLivingExpenses": { "type": "number" },
+          "monthlySavingsBudget": { "type": "number" },
+          "payoffMethod": { "type": "string" },
+          "emergencyFund": { "$ref": "#/components/schemas/EmergencyFund" },
+          "goals": { "type": "array", "items": { "$ref": "#/components/schemas/Goal" } },
+          "debtPlan": { "$ref": "#/components/schemas/DebtPlan" },
+          "overallUtilizationPct": { "type": ["number", "null"] }
+        }
+      },
+      "BillsResponse": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "bills": { "type": "array", "items": { "$ref": "#/components/schemas/Bill" } }
+        }
+      },
+      "CreditCardsResponse": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "overallUtilizationPct": { "type": ["number", "null"] },
+          "reportLeadDays": { "type": "number" },
+          "cards": { "type": "array", "items": { "$ref": "#/components/schemas/Bill" } }
+        }
+      },
+      "PaymentCalendarResponse": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "paydays": { "type": "array", "items": { "$ref": "#/components/schemas/Payday" } }
+        }
+      },
+      "DebtsResponse": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "payoffMethod": { "type": "string" },
+          "debtPlan": { "$ref": "#/components/schemas/DebtPlan" },
+          "debts": { "type": "array", "items": { "$ref": "#/components/schemas/DebtItem" } }
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "properties": {
+          "asOf": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "today": { "type": "string" },
+          "plan": { "$ref": "#/components/schemas/Plan" },
+          "income": { "$ref": "#/components/schemas/Income" },
+          "monthlyPayments": { "type": "number" },
+          "leftover": { "type": "number" },
+          "payoffMethod": { "type": "string" },
+          "reportLeadDays": { "type": "number" },
+          "monthlyLivingExpenses": { "type": "number" },
+          "emergencyFund": { "$ref": "#/components/schemas/EmergencyFund" },
+          "goals": { "type": "array", "items": { "$ref": "#/components/schemas/Goal" } },
+          "monthlySavingsBudget": { "type": "number" },
+          "debtPlan": { "$ref": "#/components/schemas/DebtPlan" },
+          "overallUtilizationPct": { "type": ["number", "null"] },
+          "bills": { "type": "array", "items": { "$ref": "#/components/schemas/Bill" } },
+          "paymentCalendar": { "type": "array", "items": { "$ref": "#/components/schemas/Payday" } }
+        }
+      }
+    }
+  }
+}

@@ -1727,8 +1727,13 @@ function scheduleCloudSync() {
 
 async function cloudSync() {
   if (!currentUser) return;
+  // Persist the raw state plus a precomputed, model-friendly snapshot. The
+  // read-only /v1 API serves slices of this snapshot to external tools (e.g. a
+  // ChatGPT Action) so the derivation logic stays in one place — right here.
+  let snapshot = {};
+  try { snapshot = buildSnapshot(); } catch (e) { snapshot = {}; }
   const { error } = await sb.from("budgets").upsert(
-    { user_id: currentUser.id, data: state, updated_at: new Date().toISOString() },
+    { user_id: currentUser.id, data: state, snapshot: snapshot, updated_at: new Date().toISOString() },
     { onConflict: "user_id" }
   );
   setSyncStatus(error ? "error" : "saved");
@@ -3444,6 +3449,29 @@ function buildSnapshot() {
         targetReportBalance: num(b.creditLimit) > 0 ? targetReportBalance(b, 9) : null,
       };
     }),
+    // Per-payday schedule: which paycheck covers which bills, the extra sent to
+    // debt, and the projected bank balance after each window. Powers the
+    // read-only /v1/payment-calendar endpoint.
+    paymentCalendar: (function () {
+      const pl = buildPaydayPlan();
+      if (!pl) return [];
+      return pl.windows.map(w => ({
+        payday: toISO(w.date),
+        income: +(w.amount || 0).toFixed(2),
+        sources: w.sources || [],
+        startingBalance: +(w.startBalance || 0).toFixed(2),
+        projectedBalanceAfter: +(w.endBalance || 0).toFixed(2),
+        shortfall: +(w.shortfall || 0).toFixed(2),
+        bills: (w.bills || []).map(x => ({
+          name: x.bill && x.bill.name, amount: +(x.amount || 0).toFixed(2),
+          dueDate: toISO(x.date), paid: !!x.paid, early: !!x.early, deferred: !!x.deferred,
+        })),
+        extraDebtPayments: (w.extras || []).map(x => ({
+          name: x.bill && x.bill.name, amount: +(x.amount || 0).toFixed(2),
+        })),
+        toGoals: +(w.goalLeftover || 0).toFixed(2),
+      }));
+    })(),
   };
 }
 
