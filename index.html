@@ -1293,6 +1293,14 @@
       <div class="aff-home"><label for="affHoa">HOA ($/mo)</label><div class="money-input"><input id="affHoa" class="aff-input" type="number" min="0" step="any" placeholder="0"/></div></div>
       <div><label for="affHousing">Current rent/housing ($/mo)</label><div class="money-input"><input id="affHousing" class="aff-input" type="number" min="0" step="any" placeholder="0"/></div></div>
       <div><label for="affGross">Gross monthly income</label><div class="money-input"><input id="affGross" class="aff-input" type="number" min="0" step="any" placeholder="0.00"/></div></div>
+      <div><label for="affReplaceLoan">Trade in / replace a current loan</label>
+        <select id="affReplaceLoan" class="aff-input" style="width:100%"><option value="">— none —</option></select>
+      </div>
+    </div>
+
+    <div class="afford-scenarios" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:18px;align-items:center">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer"><input type="checkbox" id="affPayoffCards" class="aff-input" style="width:auto"/> Assume all credit cards paid off first</label>
+      <span class="freq-note">Toggle scenarios — the verdict, DTI, and cash-flow update live.</span>
     </div>
 
     <div id="affResult" style="margin-top:18px"></div>
@@ -3582,7 +3590,9 @@ function buildSnapshot() {
       const cc = state.bills.reduce((s, b) => s + (b.type === "Credit Card Debt" ? monthlyPayment(b) : 0), 0);
       const loans = state.bills.reduce((s, b) => s + (b.type === "Other Debt / Loan" ? monthlyPayment(b) : 0), 0);
       const living = monthlyLivingExpenses();
-      const allOut = totalMonthlyPayments() + living;
+      // Outflows = all bill payments + variable (non-bill) spending. Do NOT add
+      // living expenses on top — those are already bills (would double-count).
+      const allOut = totalMonthlyPayments() + affOtherMonthlySpend();
       return {
         creditScore: num(state.creditScore) || null,
         recurringMonthlyIncomeNet: +net.toFixed(2),
@@ -4801,10 +4811,21 @@ function toggleTheme() { state.theme = state.theme === "dark" ? "light" : "dark"
  * ------------------------------------------------------------------ */
 function affDefaults() {
   return { type: "Vehicle", price: "", down: "", tradeValue: "", tradeOwed: "",
-           term: "", apr: "", tax: "", ins: "", hoa: "", housing: "", gross: "" };
+           term: "", apr: "", tax: "", ins: "", hoa: "", housing: "", gross: "",
+           payoffCards: false, replaceLoanId: "" };
 }
 function affGet() { return Object.assign(affDefaults(), state.afford || {}); }
 function affDefaultTerm(type) { return type === "Home" ? 30 : (type === "Boat" || type === "RV") ? 12 : 6; }
+// Variable one-off spending from the Plaid feed (Walmart-type) — NOT in bills,
+// so it's the only spending we add on top of bill payments (no double-count).
+function affOtherMonthlySpend() {
+  const v = state.plaidVariable;
+  return v && v.monthly != null ? num(v.monthly) : 0;
+}
+// Credit-card monthly minimums (removed in the "cards paid off" scenario).
+function affCardPayments() {
+  return state.bills.reduce((s, b) => s + (b.type === "Credit Card Debt" ? monthlyPayment(b) : 0), 0);
+}
 
 // Recurring NET monthly income from regular biweekly paychecks, excluding the
 // variable commission.
@@ -4848,15 +4869,27 @@ function affRenderInputs() {
   set("affTradeValue", a.tradeValue); set("affTradeOwed", a.tradeOwed);
   set("affTerm", a.term); set("affApr", a.apr); set("affTax", a.tax);
   set("affIns", a.ins); set("affHoa", a.hoa); set("affHousing", a.housing); set("affGross", a.gross);
+  const cards = document.getElementById("affPayoffCards"); if (cards) cards.checked = !!a.payoffCards;
+  // Populate the "replace a loan" dropdown from current loan bills.
+  const sel = document.getElementById("affReplaceLoan");
+  if (sel) {
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    sel.appendChild(el("option", { text: "— none —", attrs: { value: "" } }));
+    state.bills.filter(b => b.type === "Other Debt / Loan" && monthlyPayment(b) > 0).forEach(b =>
+      sel.appendChild(el("option", { text: b.name + " ($" + Math.round(monthlyPayment(b)) + "/mo)", attrs: { value: String(b.id) } })));
+    sel.value = a.replaceLoanId || "";
+  }
   affToggleByType(a.type);
 }
 function onAffInput() {
   const v = id => { const e = document.getElementById(id); return e ? e.value : ""; };
+  const checked = id => { const e = document.getElementById(id); return e ? !!e.checked : false; };
   state.afford = {
     type: v("affType") || "Vehicle", price: v("affPrice"), down: v("affDown"),
     tradeValue: v("affTradeValue"), tradeOwed: v("affTradeOwed"), term: v("affTerm"),
     apr: v("affApr"), tax: v("affTax"), ins: v("affIns"), hoa: v("affHoa"),
     housing: v("affHousing"), gross: v("affGross"),
+    payoffCards: checked("affPayoffCards"), replaceLoanId: v("affReplaceLoan"),
   };
   save();
   affToggleByType(state.afford.type);
@@ -4877,11 +4910,29 @@ function renderAfford() {
   if (noteEl) noteEl.textContent = a.apr !== "" ? "" : (score ? "(est. for score " + score + ")" : "(set credit score in Bills → for an estimate)");
 
   const price = num(a.price), down = num(a.down);
-  const netIncome = affNetMonthlyIncome();
-  const grossIncome = a.gross !== "" ? num(a.gross) : (netIncome > 0 ? netIncome / 0.78 : 0);
-  const debtObm = affDebtObligations();
-  const allOutflows = totalMonthlyPayments() + monthlyLivingExpenses();
+  const grossEntered = a.gross !== "" ? num(a.gross) : 0;
+  // Recurring net income; if no paychecks are entered but a gross was, derive net.
+  let netIncome = affNetMonthlyIncome();
+  if (netIncome <= 0 && grossEntered > 0) netIncome = grossEntered * 0.78;
+  const grossIncome = grossEntered > 0 ? grossEntered : (netIncome > 0 ? netIncome / 0.78 : 0);
   const curHousing = num(a.housing);
+
+  // Scenario adjustments.
+  const payoffCards = !!a.payoffCards;
+  const cardPmts = affCardPayments();
+  let replacedLoan = null;
+  if (a.replaceLoanId) replacedLoan = state.bills.find(b => String(b.id) === String(a.replaceLoanId)) || null;
+  const replacedLoanPmt = replacedLoan ? monthlyPayment(replacedLoan) : 0;
+
+  // Obligations & outflows, net of scenarios. Outflows = all bill payments +
+  // variable (Plaid) spending only — NOT living expenses (those are bills, so
+  // adding them would double-count).
+  let debtObm = affDebtObligations();
+  let allOutflows = totalMonthlyPayments() + affOtherMonthlySpend();
+  if (payoffCards) { debtObm -= cardPmts; allOutflows -= cardPmts; }
+  if (replacedLoan) { debtObm -= replacedLoanPmt; allOutflows -= replacedLoanPmt; }
+  debtObm = Math.max(0, debtObm);
+  allOutflows = Math.max(0, allOutflows);
 
   host.textContent = "";
   if (price <= 0) { host.appendChild(el("p", { class: "hint", text: "Enter a price to see whether it fits your budget." })); return; }
@@ -4929,12 +4980,21 @@ function renderAfford() {
   host.appendChild(box);
 
   const reasons = [];
+  // Scenario notes first, so it's clear what's being assumed.
+  if (payoffCards) reasons.push("Scenario: all credit cards paid off — removed " + affFmt(cardPmts) + "/mo of card minimums from your obligations.");
+  if (replacedLoan) reasons.push("Scenario: trading in \"" + replacedLoan.name + "\" — removed its " + affFmt(replacedLoanPmt) + "/mo payment before adding the new one.");
   if (backDTI != null) reasons.push("Debt-to-income would be " + Math.round(backDTI) + "% (lenders like ≤36%, hard cap ~43%).");
   if (frontDTI != null) reasons.push("Housing alone is " + Math.round(frontDTI) + "% of gross (≤28% preferred).");
-  reasons.push("From your recurring paychecks you'd have " + affFmt(leftoverAfter) + "/mo left after everything (today: " + affFmt(leftoverNow) + "). Commission is extra and not counted here.");
-  if (score && score < 620 && type !== "Home") reasons.push("At a " + score + " score, ~" + apr + "% is subprime. Paying down cards to lift your score would cut this rate a lot.");
+  reasons.push("After this purchase you'd have " + affFmt(leftoverAfter) + "/mo left from recurring income (currently " + affFmt(leftoverNow) + "). Commission is upside, not counted here.");
+  // Rate guidance: compare an entered rate to what the score would realistically get.
+  const estApr = affAprEstimate(score, type);
+  if (a.apr !== "" && score && apr < estApr - 2) {
+    reasons.push("Heads up: " + apr + "% is well below the ~" + estApr + "% a " + score + " score typically gets" + (payoffCards ? " — though paying off cards should lift your score toward that better rate" : "") + ". Confirm that rate is real before counting on it.");
+  } else if (a.apr === "" && score && score < 620 && type !== "Home") {
+    reasons.push("At a " + score + " score the ~" + apr + "% estimate is subprime. Paying down cards to lift your score would cut this rate a lot" + (payoffCards ? " — re-enter a lower APR above to model your improved rate" : "") + ".");
+  }
   if (score && score < 620 && type === "Home") reasons.push("Below 620, conventional mortgages usually decline (FHA may be the only path). Raising your score first opens far better terms.");
-  if (!grossIncome) reasons.push("Add your paychecks in Income (and gross monthly income above) for accurate DTI.");
+  if (!grossIncome) reasons.push("Add your paychecks in Income (and gross monthly income above) for an accurate read.");
   const ul = el("ul", { class: "aff-reasons" });
   reasons.forEach(r => ul.appendChild(el("li", { text: r })));
   host.appendChild(ul);
