@@ -77,8 +77,9 @@ module.exports = async function handler(req, res) {
   const cards = [];
   let allTxns = [];
 
-  try {
-    for (const it of items) {
+  const itemErrors = [];
+  for (const it of items) {
+    try {
       // Balances + credit liabilities in one /liabilities/get (includes accounts).
       const liab = await plaid("/liabilities/get", { access_token: it.accessToken });
       const creditByAccount = {};
@@ -117,10 +118,17 @@ module.exports = async function handler(req, res) {
       const { added, cursor } = await syncTransactions(it.accessToken, it.cursor);
       allTxns = allTxns.concat(added);
       if (cursor && cursor !== it.cursor) { try { await saveCursor(user.id, it.itemId, cursor); } catch (e) {} }
+    } catch (e) {
+      // One bad item (e.g. a stale sandbox token after switching to production,
+      // or a bank needing re-auth) shouldn't sink the whole sync — skip it.
+      console.error("refresh item failed", it.itemId, e && e.message, e && e.plaid);
+      itemErrors.push({ item: it.itemId, code: (e && e.plaid && e.plaid.error_code) || "error" });
     }
-  } catch (e) {
-    console.error("refresh pull error", e && e.message, e && e.plaid);
-    return sendJSON(res, 502, { error: "Could not refresh bank data." });
+  }
+
+  // Only hard-fail if every item failed and nothing came back.
+  if (!accounts.length && itemErrors.length) {
+    return sendJSON(res, 502, { error: "Could not refresh bank data.", itemErrors });
   }
 
   const bankTotal = accounts
@@ -144,5 +152,6 @@ module.exports = async function handler(req, res) {
     spending: spendingSummary(allTxns),
     transactions: recent,
     syncedAt: new Date().toISOString(),
+    itemErrors: itemErrors.length ? itemErrors : undefined,
   });
 };
