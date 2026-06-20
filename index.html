@@ -2103,8 +2103,11 @@ const ESSENTIAL_PFC = ["RENT_AND_UTILITIES", "FOOD_AND_DRINK", "TRANSPORTATION",
 function realMonthlyEssentials() {
   const sp = state.plaidSpending;
   if (!sp || !Array.isArray(sp.byCategory)) return 0;
-  const essential = sp.byCategory.reduce((s, c) => s + (ESSENTIAL_PFC.indexOf(c.category) >= 0 ? num(c.amount) : 0), 0);
-  return essential > 0 ? essential / 3 : 0; // 90 days requested ≈ 3 months
+  // byCategory carries a per-category monthly average computed from the actual
+  // span of data; fall back to total/3 for older snapshots without it.
+  const essential = sp.byCategory.reduce((s, c) =>
+    s + (ESSENTIAL_PFC.indexOf(c.category) >= 0 ? num(c.monthly != null ? c.monthly : (c.amount || 0) / 3) : 0), 0);
+  return essential > 0 ? essential : 0;
 }
 
 // Monthly "living expenses": when a bank is connected, use the real measured
@@ -3509,6 +3512,23 @@ function buildSnapshot() {
         toGoals: +(w.goalLeftover || 0).toFixed(2),
       }));
     })(),
+    // Classified bank feed (from Plaid) so the coach can tell income (jobs)
+    // apart from recurring bills (AT&T) and one-off spending (Walmart). Null
+    // until a bank is connected and synced.
+    bankFeed: (function () {
+      if (!state.plaidSyncedAt) return null;
+      const inc = state.plaidIncome || {}, bills = state.plaidRecurringBills || {}, vr = state.plaidVariable || {};
+      const stream = s => ({ name: s.name, monthly: num(s.monthly), frequency: s.frequency || null, nextDate: s.nextDate || null, category: s.category || null });
+      return {
+        syncedAt: state.plaidSyncedAt,
+        detectedMonthlyIncome: inc.monthly != null ? num(inc.monthly) : null,
+        incomeStreams: (inc.streams || []).map(stream),
+        recurringBillsMonthly: bills.monthly != null ? num(bills.monthly) : null,
+        recurringBills: (bills.streams || []).map(stream),
+        otherSpendingMonthly: vr.monthly != null ? num(vr.monthly) : (vr.total != null ? num(vr.total) : null),
+        note: "income = recurring deposits (jobs); recurringBills = recurring outflow; otherSpending = variable one-off purchases. Commission is still variable and not part of detectedMonthlyIncome unless it recurs.",
+      };
+    })(),
   };
 }
 
@@ -3834,6 +3854,9 @@ function plaidApply(d) {
   });
 
   state.plaidSpending = d.spending || null;
+  state.plaidIncome = d.income || null;                 // recurring inflow = jobs
+  state.plaidRecurringBills = d.recurringBills || null; // recurring outflow = AT&T etc.
+  state.plaidVariable = d.variableSpending || null;     // one-off spending = Walmart etc.
   state.plaidRecent = (d.transactions || []).slice(0, 50);
   state.plaidSyncedAt = d.syncedAt || new Date().toISOString();
 
@@ -3861,18 +3884,35 @@ function prettyCat(code) {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// Show the real-spending readout and note that it now drives living expenses.
+// Show the classified bank feed: income (jobs) vs recurring bills (AT&T) vs
+// other spending (Walmart), so it's clear nothing is miscounted.
 function plaidRenderSpending() {
-  const el = document.getElementById("plaidSpending");
-  if (!el) return;
-  const sp = state.plaidSpending;
-  if (!sp || !sp.total) { el.textContent = ""; return; }
-  const mo = realMonthlyEssentials();
-  const top = (sp.byCategory || []).slice(0, 4).map(c => prettyCat(c.category) + " $" + Math.round(num(c.amount))).join(" · ");
-  el.textContent =
-    "Real spending (90-day): $" + Math.round(num(sp.total)) + " across " + (sp.count || 0) + " transactions" +
-    (mo > 0 ? " · essentials ≈ $" + Math.round(mo) + "/mo (now drives living expenses + emergency target)" : "") +
-    (top ? " — top: " + top : "");
+  const host = document.getElementById("plaidSpending");
+  if (!host) return;
+  host.textContent = "";
+  if (!state.plaidSyncedAt) return;
+  const inc = state.plaidIncome, bills = state.plaidRecurringBills, vr = state.plaidVariable;
+
+  const line = (label, text) => {
+    const d = el("div", { style: "margin-top:4px" });
+    d.appendChild(el("strong", { text: label + " " }));
+    d.appendChild(document.createTextNode(text));
+    host.appendChild(d);
+  };
+  const names = (streams, n) => (streams || []).slice(0, n)
+    .map(s => s.name + " $" + Math.round(num(s.monthly)) + "/mo").join(" · ");
+
+  if (inc && inc.streams && inc.streams.length)
+    line("Income (jobs):", "≈ $" + Math.round(num(inc.monthly)) + "/mo — " + names(inc.streams, 3));
+  if (bills && bills.streams && bills.streams.length)
+    line("Recurring bills:", "≈ $" + Math.round(num(bills.monthly)) + "/mo — " + names(bills.streams, 4));
+  if (vr && vr.total) {
+    const top = (vr.byCategory || []).slice(0, 3).map(c => prettyCat(c.category) + " $" + Math.round(num(c.monthly != null ? c.monthly : c.amount))).join(" · ");
+    line("Other spending:", "≈ $" + Math.round(num(vr.monthly != null ? vr.monthly : vr.total)) + "/mo" + (top ? " — " + top : ""));
+  }
+  const ess = realMonthlyEssentials();
+  if (ess > 0) line("Living expenses:", "≈ $" + Math.round(ess) + "/mo (drives emergency target)");
+  if (!host.childNodes.length) line("Bank feed:", "synced — categorizing income vs bills vs spending on next refresh.");
 }
 
 // Run async fn over items with a small concurrency cap (don't hammer the API).

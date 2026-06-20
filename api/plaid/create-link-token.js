@@ -15,7 +15,7 @@ module.exports = async function handler(req, res) {
       user: { client_user_id: user.id },
       // Phase 1 scope: real balances, credit-card liabilities, and spending.
       products: ["transactions", "liabilities"],
-      transactions: { days_requested: 90 },
+      transactions: { days_requested: 180 }, // 180+ improves recurring stream detection
     };
     // Required for OAuth banks (most major banks in Production). Must be an
     // https URI with no query params, registered in the Plaid dashboard's

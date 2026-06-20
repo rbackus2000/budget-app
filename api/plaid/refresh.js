@@ -42,12 +42,51 @@ async function syncTransactions(accessToken, startCursor) {
   return { added, cursor };
 }
 
+// Convert a recurring stream's amount to a monthly-equivalent figure.
+function monthlyize(amount, frequency) {
+  const f = String(frequency || "").toUpperCase();
+  const mult = f === "WEEKLY" ? 4.333 : f === "BIWEEKLY" ? 2.1667 : f === "SEMI_MONTHLY" ? 2
+    : f === "MONTHLY" ? 1 : f === "ANNUALLY" ? 1 / 12 : 1;
+  return +(Math.abs(num(amount)) * mult).toFixed(2);
+}
+
+// Normalize one recurring stream (inflow = income, outflow = recurring bill).
+function normStream(s, institution) {
+  const avg = (s.average_amount && s.average_amount.amount) != null ? s.average_amount.amount
+    : (s.last_amount && s.last_amount.amount);
+  return {
+    name: s.merchant_name || s.description || "Recurring",
+    monthly: monthlyize(avg, s.frequency),
+    lastAmount: s.last_amount ? num(s.last_amount.amount) : null,
+    frequency: s.frequency || null,
+    lastDate: s.last_date || null,
+    nextDate: s.predicted_next_date || null,
+    category: (s.personal_finance_category && s.personal_finance_category.primary) || null,
+    institution: institution || null,
+  };
+}
+
+// Detect recurring inflow (paychecks) and outflow (bills) for one item.
+// Returns active streams only; tolerates a not-yet-ready transactions product.
+async function getRecurring(accessToken) {
+  try {
+    const r = await plaid("/transactions/recurring/get", { access_token: accessToken });
+    const active = arr => (arr || []).filter(s => s.is_active !== false);
+    return { inflow: active(r.inflow_streams), outflow: active(r.outflow_streams) };
+  } catch (e) {
+    const code = e && e.plaid && e.plaid.error_code;
+    if (code !== "PRODUCT_NOT_READY") console.error("recurring/get", code || (e && e.message));
+    return { inflow: [], outflow: [] };
+  }
+}
+
 // Build a compact spending summary from positive (outflow) transactions,
 // excluding transfers and loan/credit-card payments so it reflects real spend.
 function spendingSummary(txns) {
   const SKIP = /^(TRANSFER_IN|TRANSFER_OUT|LOAN_PAYMENTS|BANK_FEES)$/;
   const byCat = {};
   let total = 0, count = 0;
+  const months = new Set();
   txns.forEach(t => {
     const amt = num(t.amount); // Plaid: positive = money out
     if (amt <= 0) return;
@@ -55,11 +94,15 @@ function spendingSummary(txns) {
     if (SKIP.test(cat)) return;
     byCat[cat] = (byCat[cat] || 0) + amt;
     total += amt; count++;
+    if (t.date) months.add(String(t.date).slice(0, 7)); // YYYY-MM
   });
+  // Monthly figures use the actual span of data so they're right whether the
+  // history window is 90 or 180 days.
+  const m = Math.max(1, months.size);
   const byCategory = Object.keys(byCat)
-    .map(k => ({ category: k, amount: +byCat[k].toFixed(2) }))
+    .map(k => ({ category: k, amount: +byCat[k].toFixed(2), monthly: +(byCat[k] / m).toFixed(2) }))
     .sort((a, b) => b.amount - a.amount);
-  return { total: +total.toFixed(2), count, byCategory };
+  return { total: +total.toFixed(2), monthly: +(total / m).toFixed(2), months: m, count, byCategory };
 }
 
 module.exports = async function handler(req, res) {
@@ -76,6 +119,9 @@ module.exports = async function handler(req, res) {
   const accounts = [];
   const cards = [];
   let allTxns = [];
+  const incomeStreams = [];   // recurring inflow = paychecks / jobs
+  const recurringBills = [];  // recurring outflow = AT&T, utilities, subscriptions
+  const recurringIds = new Set(); // txn ids belonging to recurring streams (to isolate variable spend)
 
   const itemErrors = [];
   for (const it of items) {
@@ -118,6 +164,14 @@ module.exports = async function handler(req, res) {
       const { added, cursor } = await syncTransactions(it.accessToken, it.cursor);
       allTxns = allTxns.concat(added);
       if (cursor && cursor !== it.cursor) { try { await saveCursor(user.id, it.itemId, cursor); } catch (e) {} }
+
+      // Classify recurring streams: inflow = income (jobs), outflow = bills.
+      const rec = await getRecurring(it.accessToken);
+      rec.inflow.forEach(s => incomeStreams.push(normStream(s, it.institutionName)));
+      rec.outflow.forEach(s => {
+        recurringBills.push(normStream(s, it.institutionName));
+        (s.transaction_ids || []).forEach(id => recurringIds.add(id));
+      });
     } catch (e) {
       // One bad item (e.g. a stale sandbox token after switching to production,
       // or a bank needing re-auth) shouldn't sink the whole sync — skip it.
@@ -144,12 +198,20 @@ module.exports = async function handler(req, res) {
       category: (t.personal_finance_category && t.personal_finance_category.primary) || null,
     }));
 
+  // "Other spending" = outflow that isn't a recurring bill (Walmart one-offs).
+  const variableTxns = allTxns.filter(t => !recurringIds.has(t.transaction_id));
+  const sumMonthly = list => +(list.reduce((s, x) => s + num(x.monthly), 0)).toFixed(2);
+
   return sendJSON(res, 200, {
     connected: true,
     bank: +bankTotal.toFixed(2),
     accounts,
     cards,
-    spending: spendingSummary(allTxns),
+    // Classified buckets: income (jobs) vs recurring bills (AT&T) vs other spend.
+    income: { monthly: sumMonthly(incomeStreams), streams: incomeStreams },
+    recurringBills: { monthly: sumMonthly(recurringBills), streams: recurringBills },
+    variableSpending: spendingSummary(variableTxns), // Walmart-type one-offs
+    spending: spendingSummary(allTxns),              // total outflow (drives living expenses)
     transactions: recent,
     syncedAt: new Date().toISOString(),
     itemErrors: itemErrors.length ? itemErrors : undefined,
