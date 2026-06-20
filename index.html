@@ -1749,6 +1749,9 @@ async function cloudLoad() {
     normalizeState();
     save();                                             // refresh local cache
     setSyncStatus("saved");
+    // Republish the read-only snapshot on every load so simply opening the app
+    // (or signing in) refreshes what the /v1 API serves — no edit required.
+    cloudSync();
   } else {
     // No cloud row yet. Migrate local data up only if it belongs to this user.
     const owner = localStorage.getItem(OWNER_KEY);
