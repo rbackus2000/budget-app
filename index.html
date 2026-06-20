@@ -1334,6 +1334,18 @@
     </div>
   </section>
 
+  <!-- PLAID: CONNECT BANK -->
+  <section class="card view" data-view="income">
+    <div class="card-header">
+      <div class="card-title"><span>Connected Bank</span></div>
+      <div class="bills-actions">
+        <button class="btn-upload" id="plaidConnectBtn" title="Securely connect your bank via Plaid to auto-fill balances, credit cards, and spending">🔗 Connect bank</button>
+        <button class="btn-add-item" id="plaidSyncBtn" style="display:none">↻ Sync now</button>
+      </div>
+    </div>
+    <div id="plaidStatus" class="hint" style="margin-top:6px">Connect your bank to pull real balances, credit-card APR/limit/due dates, and spending automatically. Bank-level encryption; your login is never seen by this app.</div>
+  </section>
+
   <!-- PLAN SELECTOR + CATEGORIES -->
   <section class="card view" data-view="plan">
     <h2>Budget Plan</h2>
@@ -1510,6 +1522,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <script>
 "use strict";
 
@@ -1761,6 +1774,7 @@ async function cloudLoad() {
   localStorage.setItem(OWNER_KEY, currentUser.id);
   applyTheme();
   renderAll();
+  plaidRefreshUI();
 }
 
 function renderAll() {
@@ -3673,6 +3687,126 @@ async function getAuthToken() {
   catch (e) { return null; }
 }
 
+/* ------------------------------ PLAID ----------------------------- *
+ *  Connect a bank via Plaid Link, then pull balances, credit-card     *
+ *  liabilities, and spending. Access tokens live server-side only.    *
+ * ------------------------------------------------------------------ */
+let plaidBusy = false;
+function plaidSetStatus(msg) { const e = document.getElementById("plaidStatus"); if (e) e.textContent = msg; }
+
+async function plaidConnect() {
+  if (plaidBusy) return;
+  if (!currentUser) { plaidSetStatus("Sign in first to connect a bank."); return; }
+  if (!window.Plaid) { plaidSetStatus("Couldn't load Plaid — check your connection and retry."); return; }
+  const token = await getAuthToken();
+  if (!token) { plaidSetStatus("Your session expired — sign in again."); return; }
+
+  plaidBusy = true;
+  plaidSetStatus("Starting secure connection…");
+  let linkToken;
+  try {
+    const r = await fetch("/api/plaid/create-link-token", { method: "POST", headers: { Authorization: "Bearer " + token } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "link token failed");
+    linkToken = d.link_token;
+  } catch (e) {
+    plaidBusy = false; plaidSetStatus("Couldn't start the connection — make sure Plaid keys are set in Vercel."); return;
+  }
+
+  const handler = window.Plaid.create({
+    token: linkToken,
+    onSuccess: async (public_token, metadata) => {
+      plaidSetStatus("Linking your bank…");
+      try {
+        const r = await fetch("/api/plaid/exchange-token", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({ public_token: public_token, metadata: metadata }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "exchange failed");
+        plaidBusy = false;
+        await plaidSync(true);
+      } catch (e) { plaidBusy = false; plaidSetStatus("Couldn't finish connecting — try again."); }
+    },
+    onExit: (err) => { plaidBusy = false; plaidSetStatus(err ? "Connection cancelled." : "Connect your bank to auto-fill balances and cards."); },
+  });
+  handler.open();
+}
+
+async function plaidSync() {
+  if (!currentUser) { plaidSetStatus("Sign in first."); return; }
+  const token = await getAuthToken();
+  if (!token) { plaidSetStatus("Your session expired — sign in again."); return; }
+  const btn = document.getElementById("plaidSyncBtn");
+  if (btn) btn.disabled = true;
+  plaidSetStatus("Syncing bank data…");
+  try {
+    const r = await fetch("/api/plaid/refresh", { method: "POST", headers: { Authorization: "Bearer " + token } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || "refresh failed");
+    if (!d.connected) { plaidSetStatus("No bank connected yet."); return; }
+    const summary = plaidApply(d);
+    plaidRefreshUI();
+    plaidSetStatus("✓ Synced " + new Date().toLocaleString() + " — " + summary);
+  } catch (e) {
+    plaidSetStatus("Sync failed. " + (e && e.message ? e.message : ""));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Map Plaid data onto app state: bank balance + credit cards (matched by Plaid
+// account id so re-syncs update the same bill instead of duplicating it).
+function plaidApply(d) {
+  let added = 0, updated = 0;
+  if (typeof d.bank === "number" && d.bank > 0) {
+    state.bank = d.bank;
+    const bankInput = document.getElementById("bank");
+    if (bankInput) bankInput.value = state.bank; // recalcAll doesn't re-render this field
+  }
+
+  (d.cards || []).forEach(c => {
+    let bill = state.bills.find(b => b.plaidAccountId && b.plaidAccountId === c.accountId);
+    if (!bill) {
+      bill = newBill();
+      bill.type = "Credit Card Debt";
+      bill.plaidAccountId = c.accountId;
+      state.bills.push(bill);
+      added++;
+    } else { updated++; }
+    bill.name = c.name + (c.mask ? " ••" + c.mask : "");
+    if (c.balance != null) bill.balance = c.balance;
+    if (c.limit != null) bill.creditLimit = c.limit;
+    if (c.aprPct != null) bill.apr = c.aprPct;
+    if (c.minPayment != null) bill.payment = c.minPayment;
+    if (c.dueDate) bill.due = parseInt(String(c.dueDate).slice(8, 10), 10) || bill.due;
+    if (c.statementDay) bill.stmtDay = c.statementDay;
+    bill.payments = []; // Plaid balance is authoritative — drop stale logged payments
+  });
+
+  state.plaidSpending = d.spending || null;
+  state.plaidRecent = (d.transactions || []).slice(0, 50);
+  state.plaidSyncedAt = d.syncedAt || new Date().toISOString();
+
+  normalizeState();
+  save();
+  scheduleCloudSync();
+  recalcAll();
+  return added + " card(s) added, " + updated + " updated, bank $" + (Math.round(num(state.bank)) || 0);
+}
+
+// Reflect connected state in the UI (show Sync button once a bank is linked).
+function plaidRefreshUI() {
+  const sync = document.getElementById("plaidSyncBtn");
+  const connect = document.getElementById("plaidConnectBtn");
+  if (!sync || !connect) return;
+  if (state.plaidSyncedAt) {
+    sync.style.display = "";
+    connect.textContent = "🔗 Connect another bank";
+  }
+}
+
 // Run async fn over items with a small concurrency cap (don't hammer the API).
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
@@ -4524,6 +4658,10 @@ function init() {
   document.getElementById("addGoal").addEventListener("click", () => { state.goals.push(newGoal()); save(); renderGoals(); });
   const billsTitle = document.getElementById("billsTitle");
   billsTitle.insertBefore(svgIcon(ICON_FILE, 20), billsTitle.firstChild);
+
+  // Plaid bank connection
+  document.getElementById("plaidConnectBtn").addEventListener("click", plaidConnect);
+  document.getElementById("plaidSyncBtn").addEventListener("click", () => plaidSync(false));
 
   // AI money coach
   document.getElementById("analyzeBtn").addEventListener("click", () => runAdvisor(""));
