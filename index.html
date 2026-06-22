@@ -1552,7 +1552,7 @@
       <tbody id="compareBody"></tbody>
       <tfoot id="compareFoot"></tfoot>
     </table>
-    <div class="hint">Actual reflects where your money goes: <b>Needs</b> = your bills, <b>Savings</b> = the slice going to debt payoff &amp; goals, <b>Wants</b> = your fun money. If your bills push the total over your income, you'll see "over plan." Tag each bill's bucket (on the Bills tab) to control how it's counted.</div>
+    <div class="hint">Income here is your <b>average monthly pay</b> (biweekly checks spread evenly across the year), so months that happen to have only one paycheck don't show a false overage. Actual reflects where your money goes: <b>Needs</b> = your bills, <b>Savings</b> = the slice going to debt payoff &amp; goals, <b>Wants</b> = your fun money. If your bills push the total over your income, you'll see "over plan." Tag each bill's bucket (on the Bills tab) to control how it's counted.</div>
   </section>
 
     </div><!-- /.views -->
@@ -2093,6 +2093,12 @@ function buildSchedule() {
 // Income totals count only the checks the user is including (excluded ones are
 // shown in the schedule but left out of every calculation).
 const totalIncome = () => buildSchedule().reduce((s, c) => s + (c.excluded ? 0 : c.amount), 0);
+
+// Average recurring monthly income: biweekly paychecks normalized across the
+// year (26 paychecks ÷ 12 months) so the count of checks landing in any single
+// calendar month doesn't skew it. Commission is variable, so it's excluded.
+// Used by Plan vs Actual to compare true monthly capacity against monthly bills.
+const avgMonthlyIncome = () => state.earners.reduce((s, e) => s + num(e.amount) * 26 / 12, 0);
 
 // Year-month key for a date, e.g. "2026-06".
 function ymKey(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
@@ -2963,7 +2969,10 @@ function renderBank() {
 }
 
 function renderCompare() {
-  const income = totalIncome();
+  // Compare monthly bills against AVERAGE monthly income, not the literal checks
+  // that happen to fall in the viewed month — otherwise a 1-paycheck month reads
+  // as a huge overage even when finances are fine across the year.
+  const income = avgMonthlyIncome();
   const plan = activePlan();
 
   // Target dollars per bucket (sum plan categories mapping to each bucket).
