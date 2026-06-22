@@ -2329,7 +2329,12 @@ function buildPaydayPlan() {
       const paid = !!(b.paid && b.paid[mk]);
       days.forEach(d => {
         const date = new Date(yy, mm, d);
-        if (date > horizonEnd) return; // bills are due-date driven; start date only gates paychecks
+        if (date > horizonEnd) return;
+        // Skip bills already due before the plan start (today, or the go-live
+        // date). They're in the past — already paid or already reflected in the
+        // bank balance — so re-planning them piled the whole current month onto
+        // the first check, double/triple-listing bills also due next month.
+        if (date < start) return;
         const dk = ymd(date);
         events.push({ bill: b, day: d, date: date, monthKey: mk, dateKey: dk, paid: paid, deferCount: (b.defer && b.defer[dk]) || 0 });
       });
