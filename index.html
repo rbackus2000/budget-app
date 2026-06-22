@@ -690,6 +690,12 @@
   .navbtn-text:hover { border-color: var(--accent); color: var(--accent); }
   .plan-from-note { font-size: .74rem; color: var(--text-dim); flex: 1 1 220px; min-width: 0; }
 
+  /* Per-paycheck include toggle in the schedule table */
+  .pay-table .check-include { margin-right: 4px; vertical-align: middle; cursor: pointer; accent-color: var(--accent); }
+  .pay-table tr.check-excluded td { opacity: .4; }
+  .pay-table tr.check-excluded td:not(:first-child) { text-decoration: line-through; }
+  .pay-table tr.check-excluded .check-include { opacity: 1; }
+
   /* Already-received paychecks in the schedule table */
   .check-received td { opacity: .5; }
   .received-tag {
@@ -1730,7 +1736,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, creditScore: "", creditReport: { markdown: "", date: "" } };
+  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, creditScore: "", creditReport: { markdown: "", date: "" } };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1749,6 +1755,14 @@ function normalizeState() {
   state.earners.forEach((e, i) => { if (e.id == null) e.id = i + 1; });
   if (!PLANS.some(p => p.id === state.planId)) state.planId = PLANS[0].id;
   if (!state.viewMonth) state.viewMonth = currentMonthStr();
+  if (!state.excludedChecks || typeof state.excludedChecks !== "object") state.excludedChecks = {};
+  if (!state.commissionByMonth || typeof state.commissionByMonth !== "object") state.commissionByMonth = {};
+  // Migrate the legacy single commission value onto the current month once.
+  // Commission is now entered per month and never carries forward.
+  if (!Object.keys(state.commissionByMonth).length && num(state.commission) > 0) {
+    state.commissionByMonth[currentMonthStr()] = String(num(state.commission));
+    state.commission = "";
+  }
   if (state.payoffMethod !== "avalanche" && state.payoffMethod !== "snowball") state.payoffMethod = "avalanche";
   if (!(num(state.reportLeadDays) > 0)) state.reportLeadDays = 2;
   if (typeof state.planStart !== "string") state.planStart = "";
@@ -2067,21 +2081,32 @@ function buildSchedule() {
     });
   });
   checks.sort((a, b) => a.date - b.date);
-  const comm = num(state.commission);
+  const comm = commissionForMonth(ymKey(new Date(y, m, 1)));
   if (comm > 0) {
     const lastDate = checks.length ? checks[checks.length - 1].date : new Date(y, m + 1, 0);
     checks.push({ date: lastDate, label: "Commission", amount: comm, isCommission: true });
   }
+  checks.forEach(c => { c.excluded = isCheckExcluded(c.date, c.label); });
   return checks;
 }
 
-const totalIncome = () => buildSchedule().reduce((s, c) => s + c.amount, 0);
+// Income totals count only the checks the user is including (excluded ones are
+// shown in the schedule but left out of every calculation).
+const totalIncome = () => buildSchedule().reduce((s, c) => s + (c.excluded ? 0 : c.amount), 0);
 
 // Year-month key for a date, e.g. "2026-06".
 function ymKey(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
 // Full date key, e.g. "2026-06-15".
 function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function billPaidOn(b, date) { return !!(b.paid && b.paid[ymKey(date)]); }
+
+// Per-paycheck exclusion: a check the user has unticked (e.g. one already
+// reflected in the starting balance) is left out of income and the plan.
+function checkKey(date, label) { return ymd(date) + "|" + (label || ""); }
+function isCheckExcluded(date, label) { return !!(state.excludedChecks && state.excludedChecks[checkKey(date, label)]); }
+// Commission is entered per calendar month and never carries to other months.
+function commissionForMonth(key) { return num(state.commissionByMonth && state.commissionByMonth[key]); }
+function currentCommission() { const { y, m } = viewYM(); return commissionForMonth(ymKey(new Date(y, m, 1))); }
 
 // Every biweekly payday from firstPay that falls within [start, end].
 function payDatesInRange(firstPayStr, start, end) {
@@ -2096,10 +2121,9 @@ function payDatesInRange(firstPayStr, start, end) {
 }
 
 // All paychecks in [start, end] across earners. Commission is VARIABLE income
-// (different every month, never guaranteed), so we only apply it to the CURRENT
-// month — the regular paychecks are the only consistent recurring income. We do
-// NOT extrapolate this month's commission into future months, which would
-// over-state projected income.
+// (different every month, never guaranteed) entered per month, so it only
+// appears in the months it was actually entered for — it never carries forward.
+// Each month's commission lands on that month's last regular paycheck.
 function buildPaychecksInRange(start, end) {
   const checks = [];
   state.earners.forEach(e => {
@@ -2108,16 +2132,19 @@ function buildPaychecksInRange(start, end) {
     payDatesInRange(e.firstPay, start, end).forEach(d => checks.push({ date: d, label: e.label || "Income", amount: amt, isCommission: false }));
   });
   checks.sort((a, b) => a.date - b.date);
-  const comm = num(state.commission);
-  if (comm > 0 && checks.length) {
-    const curKey = ymKey(start);
-    const inCur = checks.filter(c => ymKey(c.date) === curKey);
-    if (inCur.length) {
-      checks.push({ date: inCur[inCur.length - 1].date, label: "Commission", amount: comm, isCommission: true });
-      checks.sort((a, b) => a.date - b.date);
+  // Group by month and attach each month's entered commission to its last check.
+  const byMonth = {};
+  checks.forEach(c => { (byMonth[ymKey(c.date)] = byMonth[ymKey(c.date)] || []).push(c); });
+  Object.keys(byMonth).forEach(key => {
+    const comm = commissionForMonth(key);
+    if (comm > 0) {
+      const last = byMonth[key][byMonth[key].length - 1];
+      checks.push({ date: last.date, label: "Commission", amount: comm, isCommission: true });
     }
-  }
-  return checks;
+  });
+  checks.sort((a, b) => a.date - b.date);
+  // Honor per-paycheck exclusions (e.g. a check already in the starting balance).
+  return checks.filter(c => !isCheckExcluded(c.date, c.label));
 }
 
 // Active plan's percentage going to each of the three buckets.
@@ -2418,12 +2445,26 @@ function planByBill(plan) {
 
 /* ----------------------------- RENDER ----------------------------- */
 function renderIncome() {
-  document.getElementById("commission").value = state.commission;
+  renderCommission();
   document.getElementById("bank").value = state.bank;
   const fun = num(state.commissionFunPct);
   document.getElementById("commFunRange").value = state.commissionFunPct;
   document.getElementById("commFunLbl").textContent = Math.round(fun) + "%";
   document.getElementById("commSaveLbl").textContent = Math.round(100 - fun) + "%";
+}
+
+// The commission field is scoped to the viewed month: it shows that month's
+// value and edits write only to that month, so nothing carries forward.
+function renderCommission() {
+  const { y, m } = viewYM();
+  const monthKey = ymKey(new Date(y, m, 1));
+  const input = document.getElementById("commission");
+  if (input && document.activeElement !== input) input.value = state.commissionByMonth[monthKey] || "";
+  const label = document.querySelector('label[for="commission"]');
+  if (label) {
+    const monthName = new Date(y, m, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    label.textContent = "Commission for " + monthName + " — added to that month's last paycheck (not carried to other months)";
+  }
 }
 
 function renderEarners() {
@@ -2462,7 +2503,7 @@ function renderSchedule() {
   document.getElementById("thSavings").textContent = "Savings " + pct.savings + "%";
 
   const checks = buildSchedule();
-  const total = checks.reduce((s, c) => s + c.amount, 0);
+  const total = checks.reduce((s, c) => s + (c.excluded ? 0 : c.amount), 0);
   document.getElementById("totalIncome").textContent = fmt(total);
 
   const body = document.getElementById("scheduleBody");
@@ -2475,9 +2516,21 @@ function renderSchedule() {
     const cutoff = planCutoffDate();
     checks.forEach(c => {
       const received = c.date < cutoff; // already happened before go-live
-      body.appendChild(el("tr", { class: received ? "check-received" : "" }, [
+      const include = el("input", {
+        class: "check-include",
+        props: { type: "checkbox", checked: !c.excluded },
+        attrs: { title: "Uncheck to leave this paycheck out of the totals and payday plan" },
+        on: { change: ev => {
+          const k = checkKey(c.date, c.label);
+          if (ev.target.checked) delete state.excludedChecks[k];
+          else state.excludedChecks[k] = true;
+          save(); recalcAll();
+        } },
+      });
+      body.appendChild(el("tr", { class: (received ? "check-received " : "") + (c.excluded ? "check-excluded" : "") }, [
         el("td", null, [
-          document.createTextNode(dateShort(c.date)),
+          include,
+          document.createTextNode(" " + dateShort(c.date)),
           received ? el("span", { class: "received-tag", text: "received" }) : null,
         ]),
         el("td", null, [ el("span", { class: "src" + (c.isCommission ? " comm" : ""), text: c.label }) ]),
@@ -2492,9 +2545,10 @@ function renderSchedule() {
   const foot = document.getElementById("scheduleFoot");
   clear(foot);
   if (checks.length) {
+    const counted = checks.filter(c => !c.excluded).length;
     foot.appendChild(el("tr", null, [
       el("td", { text: "Total" }),
-      el("td", { text: checks.length + (checks.length === 1 ? " check" : " checks") }),
+      el("td", { text: counted + (counted === 1 ? " check" : " checks") }),
       el("td", { class: "num", text: fmt(total) }),
       el("td", { class: "num", text: fmt(total * pct.needs / 100) }),
       el("td", { class: "num", text: fmt(total * pct.wants / 100) }),
@@ -3335,7 +3389,7 @@ function exportCSV() {
   out += "\r\n";
   out += csvRow(["Summary", "Amount"]);
   state.earners.forEach(e => out += csvRow([(e.label || "Earner") + " (biweekly)", num(e.amount).toFixed(2)]));
-  out += csvRow(["Commission (last check)", num(state.commission).toFixed(2)]);
+  out += csvRow(["Commission (last check)", currentCommission().toFixed(2)]);
   out += csvRow(["Total income this month", income.toFixed(2)]);
   out += csvRow(["Starting bank balance", num(state.bank).toFixed(2)]);
   out += csvRow(["Total monthly payments", totalMonthlyPayments().toFixed(2)]);
@@ -3512,7 +3566,7 @@ function buildSnapshot() {
   return {
     today: todayISO,
     plan: { name: plan.name, bucketPercents: pct, categories: plan.categories.map(c => ({ name: c.name, pct: c.pct, bucket: c.bucket })) },
-    income: { thisMonth: +income.toFixed(2), startingBank: num(state.bank), currentCash: +currentCash().toFixed(2), projectedMonthEnd: +projectedEOM().toFixed(2), commission: num(state.commission), commissionSplit: "commission is a windfall — " + Math.round(100 - num(state.commissionFunPct)) + "% to debt/goals, " + Math.round(num(state.commissionFunPct)) + "% fun" },
+    income: { thisMonth: +income.toFixed(2), startingBank: num(state.bank), currentCash: +currentCash().toFixed(2), projectedMonthEnd: +projectedEOM().toFixed(2), commission: currentCommission(), commissionSplit: "commission is a windfall — " + Math.round(100 - num(state.commissionFunPct)) + "% to debt/goals, " + Math.round(num(state.commissionFunPct)) + "% fun" },
     monthlyPayments: +payments.toFixed(2),
     leftover: +(income - payments).toFixed(2),
     payoffMethod: state.payoffMethod,
@@ -4731,7 +4785,7 @@ function shiftMonth(delta) {
   const { y, m } = viewYM();
   const d = new Date(y, m + delta, 1);
   state.viewMonth = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-  save(); recalcAll();
+  save(); recalcAll(); renderCommission();
 }
 
 /* ------------------------------ AUTH ------------------------------ */
@@ -5028,7 +5082,13 @@ function init() {
   applyTheme();
 
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
-  document.getElementById("commission").addEventListener("input", e => { state.commission = e.target.value; recalcAll(); });
+  document.getElementById("commission").addEventListener("input", e => {
+    const { y, m } = viewYM();
+    const monthKey = ymKey(new Date(y, m, 1));
+    if (e.target.value.trim() === "") delete state.commissionByMonth[monthKey];
+    else state.commissionByMonth[monthKey] = e.target.value;
+    recalcAll();
+  });
   document.getElementById("commFunRange").addEventListener("input", e => {
     state.commissionFunPct = parseFloat(e.target.value) || 0;
     document.getElementById("commFunLbl").textContent = Math.round(state.commissionFunPct) + "%";
