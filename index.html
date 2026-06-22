@@ -1347,7 +1347,7 @@
       <div class="bills-actions">
         <button class="btn-add-item" id="coachHistoryBtn">🗂 History</button>
         <button class="btn-add-item" id="coachNewBtn">✎ New chat</button>
-        <button class="btn-add-item" id="payoffPlanBtn"><span>💳</span> Payoff plan</button>
+        <button class="btn-add-item" id="payoffPlanBtn"><span>📋</span> Full plan</button>
         <button class="btn-add-item" id="analyzeBtn"><span>✦</span> Analyze my budget</button>
       </div>
     </div>
@@ -2341,7 +2341,7 @@ function buildPayoffProjection() {
 
   const cards = state.bills
     .filter(b => isExtraPayoff(b) && currentBalance(b) > 0 && monthlyPayment(b) > 0)
-    .map(b => ({ name: b.name || "Card", apr: num(b.apr), start: currentBalance(b), bal: currentBalance(b), min: monthlyPayment(b), interest: 0, idx: null }));
+    .map(b => ({ name: b.name || "Card", apr: num(b.apr), start: currentBalance(b), min: monthlyPayment(b) }));
 
   const loans = state.bills
     .filter(b => !isExtraPayoff(b) && currentBalance(b) > 0 && monthlyPayment(b) > 0)
@@ -2353,57 +2353,124 @@ function buildPayoffProjection() {
 
   if (!cards.length) {
     return loans.length
-      ? { method: state.payoffMethod, cards: [], installmentLoans: loans, note: "No revolving credit-card debt to attack — installment loans just run their scheduled payment." }
+      ? { method: state.payoffMethod, cards: [], installmentLoans: loans, openingBankBalance: r2(num(state.bank)), note: "No revolving credit-card debt to attack — installment loans just run their scheduled payment." }
       : null;
   }
 
   const order = cards.slice().sort((a, b) =>
-    state.payoffMethod === "snowball" ? (a.bal - b.bal) || (b.apr - a.apr) : (b.apr - a.apr) || (a.bal - b.bal));
+    state.payoffMethod === "snowball" ? (a.start - b.start) || (b.apr - a.apr) : (b.apr - a.apr) || (a.start - b.start));
 
   // Monthly extra to debt = the Savings bucket of AVERAGE monthly income minus
   // the goals carve — matches the payday allocator but averaged so it's stable.
   const savingsPct = planBucketPercents().savings / 100;
+  const wantsPct = planBucketPercents().wants / 100;
   const goalsCarve = (num(state.goalsSlicePct) >= 0 ? num(state.goalsSlicePct) : 20) / 100;
-  const monthlyExtra = Math.max(0, avgMonthlyIncome() * savingsPct * (1 - goalsCarve));
-  const totalMin = cards.reduce((s, c) => s + c.min, 0);
-  const monthlyBudget = totalMin + monthlyExtra;
+  const avg = avgMonthlyIncome();
+  const monthlyExtra = Math.max(0, avg * savingsPct * (1 - goalsCarve));
+  const wantsMonthly = Math.max(0, avg * wantsPct);
+  const totalMin = order.reduce((s, c) => s + c.min, 0);
 
-  const MAX = 600; // 50-year guard
-  let month = 0;
-  const left = () => order.filter(c => c.bal > 0.005);
-  while (left().length && month < MAX) {
-    const before = order.reduce((s, c) => s + c.bal, 0);
-    order.forEach(c => { if (c.bal > 0) { const i = c.bal * c.apr / 100 / 12; c.interest += i; c.bal += i; } });
-    let budget = monthlyBudget;
-    order.forEach(c => { if (c.bal <= 0) return; const pay = Math.min(c.min, c.bal, budget); c.bal -= pay; budget -= pay; });
-    for (const c of order) { if (budget <= 0) break; if (c.bal <= 0) continue; const pay = Math.min(budget, c.bal); c.bal -= pay; budget -= pay; }
-    month++;
-    order.forEach(c => { if (c.bal <= 0.005 && c.idx == null) c.idx = month; });
-    const after = order.reduce((s, c) => s + c.bal, 0);
-    if (after >= before - 0.005) break; // payments can't beat interest — stalled
+  // Rollover simulation. `lump` is a one-time payment applied UP FRONT (month 0)
+  // down the priority order (e.g. deploying the bank balance); `extra` is the
+  // recurring monthly amount on top of minimums. Total monthly budget stays
+  // constant as cards clear (their freed payment rolls to the next target).
+  function simulate(extra, lump) {
+    const sim = order.map(c => ({ name: c.name, apr: c.apr, bal: c.start, min: c.min, interest: 0, idx: null }));
+    let pool = Math.max(0, lump || 0);
+    const knocked = [];
+    for (const c of sim) {
+      if (pool <= 0) break;
+      if (c.bal <= 0) continue;
+      const pay = Math.min(pool, c.bal); c.bal -= pay; pool -= pay;
+      if (c.bal <= 0.005) { c.idx = 0; knocked.push(c.name); }
+    }
+    const budgetTotal = totalMin + Math.max(0, extra);
+    const MAX = 600; let month = 0;
+    const leftS = () => sim.filter(c => c.bal > 0.005);
+    while (leftS().length && month < MAX) {
+      const before = sim.reduce((s, c) => s + c.bal, 0);
+      sim.forEach(c => { if (c.bal > 0) { const i = c.bal * c.apr / 100 / 12; c.interest += i; c.bal += i; } });
+      let budget = budgetTotal;
+      sim.forEach(c => { if (c.bal <= 0) return; const pay = Math.min(c.min, c.bal, budget); c.bal -= pay; budget -= pay; });
+      for (const c of sim) { if (budget <= 0) break; if (c.bal <= 0) continue; const pay = Math.min(budget, c.bal); c.bal -= pay; budget -= pay; }
+      month++;
+      sim.forEach(c => { if (c.bal <= 0.005 && c.idx == null) c.idx = month; });
+      const after = sim.reduce((s, c) => s + c.bal, 0);
+      if (after >= before - 0.005) break; // payments can't beat interest — stalled
+    }
+    const stalled = !!leftS().length;
+    const maxIdx = sim.reduce((m, c) => Math.max(m, c.idx || 0), 0);
+    return { sim, stalled, knocked, totalMonths: stalled ? null : maxIdx, debtFreeMonth: stalled ? null : label(maxIdx),
+      totalInterest: r2(sim.reduce((s, c) => s + c.interest, 0)), unpaid: leftS().map(c => c.name) };
   }
-  const stalled = !!left().length;
 
-  const cardsOut = order.map((c, i) => ({
-    rank: i + 1, name: c.name, apr: c.apr, startingBalance: r2(c.start), minPayment: r2(c.min),
+  // Baseline = monthly cash flow only (no lump sum).
+  const baseRun = simulate(monthlyExtra, 0);
+  const cardsOut = baseRun.sim.map((c, i) => ({
+    rank: i + 1, name: c.name, apr: c.apr, startingBalance: r2(order[i].start), minPayment: r2(c.min),
     extraWhilePriority: i === 0 ? r2(monthlyExtra) : 0,
     monthsToPayoff: c.idx, payoffMonth: c.idx ? label(c.idx) : null, interestPaid: r2(c.interest), clears: c.idx != null,
   }));
-  const maxIdx = cardsOut.reduce((m, c) => Math.max(m, c.monthsToPayoff || 0), 0);
+
+  // Use the current bank balance as a lump sum, keeping ~1 month of total
+  // bill+debt payments liquid as a buffer. (Once Plaid is connected, state.bank
+  // updates automatically, so this stays current with no manual entry.)
+  const openingBank = num(state.bank);
+  const totalCardDebt = order.reduce((s, c) => s + c.start, 0);
+  const reserve = r2(totalMonthlyPayments());
+  const suggestedLump = Math.max(0, r2(openingBank - reserve));
+  let withBankBalance = null;
+  if (openingBank > 0 && suggestedLump > 0) {
+    const run = simulate(monthlyExtra, suggestedLump);
+    withBankBalance = {
+      openingBankBalance: r2(openingBank),
+      reserveKept: reserve,
+      reserveBasis: "keeps ~1 month of your total bill + debt payments liquid",
+      lumpSumToDebt: r2(Math.min(suggestedLump, totalCardDebt)),
+      clearsAllCardsNow: suggestedLump >= totalCardDebt,
+      cardsClearedImmediately: run.knocked,
+      debtFreeMonth: run.debtFreeMonth,
+      totalMonthsToDebtFree: run.totalMonths,
+      monthsSaved: (baseRun.totalMonths != null && run.totalMonths != null) ? baseRun.totalMonths - run.totalMonths : null,
+      totalInterestOnCards: run.totalInterest,
+      interestSaved: (baseRun.totalInterest != null && run.totalInterest != null) ? r2(baseRun.totalInterest - run.totalInterest) : null,
+      note: "Deploying your current bank balance as a one-time lump sum clears the highest-APR cards immediately — the fastest, cheapest path. Confirm your emergency fund is set aside first (see emergencyFund). Once Plaid is connected this balance updates automatically.",
+    };
+  }
+
+  // Cash-flow-only accelerators (if they'd rather not spend down the bank).
+  const payItOffSooner = [];
+  [250, 500].forEach(a => {
+    const run = simulate(monthlyExtra + a, 0);
+    payItOffSooner.push({ label: "Add $" + a + "/mo from cash flow", extraAddOn: a, debtFreeMonth: run.debtFreeMonth, totalMonths: run.totalMonths,
+      monthsSaved: (baseRun.totalMonths != null && run.totalMonths != null) ? baseRun.totalMonths - run.totalMonths : null,
+      interestSaved: (baseRun.totalInterest != null && run.totalInterest != null) ? r2(baseRun.totalInterest - run.totalInterest) : null });
+  });
+  if (wantsMonthly > 1) {
+    const run = simulate(monthlyExtra + wantsMonthly, 0);
+    payItOffSooner.push({ label: "Redirect your Wants/fun money ($" + r2(wantsMonthly) + "/mo) to debt", extraAddOn: r2(wantsMonthly), debtFreeMonth: run.debtFreeMonth, totalMonths: run.totalMonths,
+      monthsSaved: (baseRun.totalMonths != null && run.totalMonths != null) ? baseRun.totalMonths - run.totalMonths : null,
+      interestSaved: (baseRun.totalInterest != null && run.totalInterest != null) ? r2(baseRun.totalInterest - run.totalInterest) : null });
+  }
 
   return {
     method: state.payoffMethod,
+    openingBankBalance: r2(openingBank),
+    totalCardDebt: r2(totalCardDebt),
     monthlyExtraToDebt: r2(monthlyExtra),
-    totalMonthlyDebtBudget: r2(monthlyBudget),
+    totalMonthlyDebtBudget: r2(totalMin + monthlyExtra),
     firstTarget: cardsOut[0] ? cardsOut[0].name : null,
     cards: cardsOut,
     installmentLoans: loans,
-    debtFreeMonth: stalled ? null : label(maxIdx),
-    totalMonthsToDebtFree: stalled ? null : maxIdx,
-    totalInterestOnCards: r2(cards.reduce((s, c) => s + c.interest, 0)),
-    stalled: stalled,
-    unpaidCards: left().map(c => c.name),
-    basis: "Extra-to-debt = average monthly income x Savings-bucket % x (1 - goals carve), matching the payday plan but averaged for stability. Rollover method: total monthly debt budget stays constant; a cleared card's payment rolls to the next target. Dates assume regular paychecks only (no commission) starting " + label(0) + "; commission is upside that arrives faster. These are projections — exact timing depends on real statement dates.",
+    debtFreeMonth: baseRun.debtFreeMonth,
+    totalMonthsToDebtFree: baseRun.totalMonths,
+    totalInterestOnCards: baseRun.totalInterest,
+    stalled: baseRun.stalled,
+    unpaidCards: baseRun.unpaid,
+    withBankBalance: withBankBalance,
+    payItOffSooner: payItOffSooner,
+    wantsMonthly: r2(wantsMonthly),
+    basis: "Baseline extra-to-debt = average monthly income x Savings-bucket % x (1 - goals carve). Rollover method: total monthly debt budget stays constant; a cleared card's payment rolls to the next target. 'withBankBalance' applies the current bank balance (less a ~1-month buffer) as an upfront lump sum. Dates assume regular paychecks only (no commission) starting " + label(0) + "; commission is upside. Projections — exact timing depends on real statement dates.",
   };
 }
 
@@ -5400,7 +5467,7 @@ function init() {
 
   // AI money coach
   document.getElementById("analyzeBtn").addEventListener("click", () => runAdvisor(""));
-  document.getElementById("payoffPlanBtn").addEventListener("click", () => runAdvisor("Build me a detailed debt payoff plan: which debt to pay off in what order, the exact monthly amounts, and the projected payoff date for each — laid out so I can export it to PDF."));
+  document.getElementById("payoffPlanBtn").addEventListener("click", () => runAdvisor("Build me a complete plan I can export to PDF. Start with my current opening bank balance, then my monthly bills, then a detailed debt payoff schedule with dates and amounts. Importantly, use my bank balance as a lump sum to pay the debt off as soon as possible — show how much sooner I'd be debt-free and how much interest I'd save — then my savings/goals."));
   document.getElementById("advisorSend").addEventListener("click", sendAdvisorInput);
   document.getElementById("advisorInput").addEventListener("keydown", e => { if (e.key === "Enter") sendAdvisorInput(); });
   document.getElementById("coachNewBtn").addEventListener("click", coachNewChat);
