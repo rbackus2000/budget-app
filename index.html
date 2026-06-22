@@ -1347,6 +1347,7 @@
       <div class="bills-actions">
         <button class="btn-add-item" id="coachHistoryBtn">🗂 History</button>
         <button class="btn-add-item" id="coachNewBtn">✎ New chat</button>
+        <button class="btn-add-item" id="payoffPlanBtn"><span>💳</span> Payoff plan</button>
         <button class="btn-add-item" id="analyzeBtn"><span>✦</span> Analyze my budget</button>
       </div>
     </div>
@@ -2323,6 +2324,87 @@ function monthsToPayoff(balance, apr, payment) {
   if (payment <= balance * r) return Infinity; // never covers interest
   const n = Math.log(payment / (payment - balance * r)) / Math.log(1 + r);
   return Math.ceil(n);
+}
+
+/* -------------------- DEBT PAYOFF PROJECTION ---------------------- */
+// LLMs are unreliable at month-by-month amortization, so the coach must NOT do
+// this math itself — we compute the exact schedule here and hand it over as
+// authoritative numbers. Rollover method (Wells Fargo / Fidelity / Discover):
+// the total monthly debt budget stays constant; when a card clears, its payment
+// rolls onto the next target. Avalanche = highest APR first; snowball = smallest
+// balance first. Credit cards get the aggressive extra; installment loans just
+// run their own schedule and are reported separately.
+function buildPayoffProjection() {
+  const r2 = x => +Number(x || 0).toFixed(2);
+  const base = new Date(); const bY = base.getFullYear(), bM = base.getMonth();
+  const label = i => new Date(bY, bM + i, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+  const cards = state.bills
+    .filter(b => isExtraPayoff(b) && currentBalance(b) > 0 && monthlyPayment(b) > 0)
+    .map(b => ({ name: b.name || "Card", apr: num(b.apr), start: currentBalance(b), bal: currentBalance(b), min: monthlyPayment(b), interest: 0, idx: null }));
+
+  const loans = state.bills
+    .filter(b => !isExtraPayoff(b) && currentBalance(b) > 0 && monthlyPayment(b) > 0)
+    .map(b => {
+      const m = monthsToPayoff(currentBalance(b), b.apr, monthlyPayment(b));
+      return { name: b.name || "Loan", balance: r2(currentBalance(b)), apr: num(b.apr), monthlyPayment: r2(monthlyPayment(b)),
+        payoffMonth: (m === null || m === Infinity) ? null : label(m), monthsToPayoff: (m === Infinity ? null : m) };
+    });
+
+  if (!cards.length) {
+    return loans.length
+      ? { method: state.payoffMethod, cards: [], installmentLoans: loans, note: "No revolving credit-card debt to attack — installment loans just run their scheduled payment." }
+      : null;
+  }
+
+  const order = cards.slice().sort((a, b) =>
+    state.payoffMethod === "snowball" ? (a.bal - b.bal) || (b.apr - a.apr) : (b.apr - a.apr) || (a.bal - b.bal));
+
+  // Monthly extra to debt = the Savings bucket of AVERAGE monthly income minus
+  // the goals carve — matches the payday allocator but averaged so it's stable.
+  const savingsPct = planBucketPercents().savings / 100;
+  const goalsCarve = (num(state.goalsSlicePct) >= 0 ? num(state.goalsSlicePct) : 20) / 100;
+  const monthlyExtra = Math.max(0, avgMonthlyIncome() * savingsPct * (1 - goalsCarve));
+  const totalMin = cards.reduce((s, c) => s + c.min, 0);
+  const monthlyBudget = totalMin + monthlyExtra;
+
+  const MAX = 600; // 50-year guard
+  let month = 0;
+  const left = () => order.filter(c => c.bal > 0.005);
+  while (left().length && month < MAX) {
+    const before = order.reduce((s, c) => s + c.bal, 0);
+    order.forEach(c => { if (c.bal > 0) { const i = c.bal * c.apr / 100 / 12; c.interest += i; c.bal += i; } });
+    let budget = monthlyBudget;
+    order.forEach(c => { if (c.bal <= 0) return; const pay = Math.min(c.min, c.bal, budget); c.bal -= pay; budget -= pay; });
+    for (const c of order) { if (budget <= 0) break; if (c.bal <= 0) continue; const pay = Math.min(budget, c.bal); c.bal -= pay; budget -= pay; }
+    month++;
+    order.forEach(c => { if (c.bal <= 0.005 && c.idx == null) c.idx = month; });
+    const after = order.reduce((s, c) => s + c.bal, 0);
+    if (after >= before - 0.005) break; // payments can't beat interest — stalled
+  }
+  const stalled = !!left().length;
+
+  const cardsOut = order.map((c, i) => ({
+    rank: i + 1, name: c.name, apr: c.apr, startingBalance: r2(c.start), minPayment: r2(c.min),
+    extraWhilePriority: i === 0 ? r2(monthlyExtra) : 0,
+    monthsToPayoff: c.idx, payoffMonth: c.idx ? label(c.idx) : null, interestPaid: r2(c.interest), clears: c.idx != null,
+  }));
+  const maxIdx = cardsOut.reduce((m, c) => Math.max(m, c.monthsToPayoff || 0), 0);
+
+  return {
+    method: state.payoffMethod,
+    monthlyExtraToDebt: r2(monthlyExtra),
+    totalMonthlyDebtBudget: r2(monthlyBudget),
+    firstTarget: cardsOut[0] ? cardsOut[0].name : null,
+    cards: cardsOut,
+    installmentLoans: loans,
+    debtFreeMonth: stalled ? null : label(maxIdx),
+    totalMonthsToDebtFree: stalled ? null : maxIdx,
+    totalInterestOnCards: r2(cards.reduce((s, c) => s + c.interest, 0)),
+    stalled: stalled,
+    unpaidCards: left().map(c => c.name),
+    basis: "Extra-to-debt = average monthly income x Savings-bucket % x (1 - goals carve), matching the payday plan but averaged for stability. Rollover method: total monthly debt budget stays constant; a cleared card's payment rolls to the next target. Dates assume regular paychecks only (no commission) starting " + label(0) + "; commission is upside that arrives faster. These are projections — exact timing depends on real statement dates.",
+  };
 }
 
 /* ----------------------- PAYDAY ALLOCATOR ------------------------- */
@@ -3723,6 +3805,9 @@ function buildSnapshot() {
     goals: state.goals.map(g => { const p = goalPace(g.saved, g.target, g.targetDate); return { name: g.name, target: num(g.target), saved: num(g.saved), achieveBy: g.targetDate || null, monthlyNeeded: p.monthly ? +p.monthly.toFixed(2) : null }; }),
     monthlySavingsBudget: +monthlySavingsBudget().toFixed(2),
     debtPlan: (function () { const pl = buildPaydayPlan(); return { fundingModel: "extra payments target credit cards only (not installment loans like auto/mortgage); " + Math.round(num(state.goalsSlicePct)) + "% of Savings is carved to goals each check, the rest pays down cards, and leftover after cards also goes to goals", monthlyExtraToDebt: pl ? +pl.totalExtra.toFixed(2) : 0, monthlyToGoals: pl ? +pl.totalGoalLeftover.toFixed(2) : 0 }; })(),
+    // Authoritative, deterministic payoff schedule (rollover avalanche/snowball)
+    // — the coach presents these exact dates/amounts instead of doing the math.
+    payoffProjection: buildPayoffProjection(),
     overallUtilizationPct: overallUtilization() == null ? null : Math.round(overallUtilization() * 100),
     bills: state.bills.map(b => {
       const util = utilization(b);
@@ -5315,6 +5400,7 @@ function init() {
 
   // AI money coach
   document.getElementById("analyzeBtn").addEventListener("click", () => runAdvisor(""));
+  document.getElementById("payoffPlanBtn").addEventListener("click", () => runAdvisor("Build me a detailed debt payoff plan: which debt to pay off in what order, the exact monthly amounts, and the projected payoff date for each — laid out so I can export it to PDF."));
   document.getElementById("advisorSend").addEventListener("click", sendAdvisorInput);
   document.getElementById("advisorInput").addEventListener("keydown", e => { if (e.key === "Enter") sendAdvisorInput(); });
   document.getElementById("coachNewBtn").addEventListener("click", coachNewChat);
