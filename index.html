@@ -1142,6 +1142,17 @@
   .advisor-input .btn-pay:disabled { opacity: .5; cursor: not-allowed; }
   .advisor-disclaimer { text-align: left; margin-top: 10px; }
 
+  /* Saved coach conversations */
+  .coach-history { border: 1px solid var(--border); border-radius: 11px; margin-bottom: 14px; max-height: 280px; overflow: auto; background: var(--surface-2); }
+  .coach-history .ch-empty { padding: 14px; color: var(--text-dim); font-size: .88rem; }
+  .coach-history .ch-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); cursor: pointer; font-size: .9rem; }
+  .coach-history .ch-row:first-child { border-top: none; }
+  .coach-history .ch-row:hover { background: var(--surface); }
+  .coach-history .ch-title { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .coach-history .ch-date { color: var(--text-dim); font-size: .74rem; white-space: nowrap; }
+  .coach-history .ch-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .coach-history .ch-del:hover { color: var(--red); background: var(--surface); }
+
   /* Credit Report Guard */
   .util-overall { font-size: .85rem; color: var(--text-dim); font-weight: 600; }
   .util-overall b { font-variant-numeric: tabular-nums; }
@@ -1316,8 +1327,13 @@
   <section class="card advisor-card view" data-view="coach" id="advisorCard">
     <div class="card-header">
       <div class="card-title"><span>AI Money Coach</span></div>
-      <button class="btn-add-item" id="analyzeBtn"><span>✦</span> Analyze my budget</button>
+      <div class="bills-actions">
+        <button class="btn-add-item" id="coachHistoryBtn">🗂 History</button>
+        <button class="btn-add-item" id="coachNewBtn">✎ New chat</button>
+        <button class="btn-add-item" id="analyzeBtn"><span>✦</span> Analyze my budget</button>
+      </div>
     </div>
+    <div class="coach-history" id="coachHistory" style="display:none"></div>
     <div class="advisor-body" id="advisorBody">
       <div class="advisor-empty" id="advisorEmpty">Ask anything about your money — “Can I afford a $300/mo car payment?”, “Which card should I pay first?”, “How do I get my credit score up before April?” Or hit <b>Analyze my budget</b> for a full read.</div>
     </div>
@@ -3566,6 +3582,103 @@ function renderCredit() {
 /* --------------------------- AI ADVISOR --------------------------- */
 const advisorHistory = []; // { role: "user"|"assistant", content }
 let advisorBusy = false;
+let coachConvId = null;     // current conversation row id (null until first message)
+
+// The "ask anything…" placeholder, rebuilt with safe DOM nodes (no innerHTML).
+function coachEmptyNode() {
+  return el("div", { class: "advisor-empty", attrs: { id: "advisorEmpty" } }, [
+    document.createTextNode("Ask anything about your money — “Can I afford a $300/mo car payment?”, “Which card should I pay first?”, “How do I get my credit score up before April?” Or hit "),
+    el("b", { text: "Analyze my budget" }),
+    document.createTextNode(" for a full read."),
+  ]);
+}
+
+/* ----- Saved coach conversations (Supabase: coach_conversations/_messages) --- */
+// Lazily create the conversation row on the first message of a chat.
+async function coachEnsureConversation(firstText) {
+  if (coachConvId || !currentUser) return coachConvId;
+  const title = (String(firstText || "").trim() || "New conversation").slice(0, 80);
+  const { data, error } = await sb.from("coach_conversations")
+    .insert({ user_id: currentUser.id, title }).select("id").single();
+  if (error || !data) return null;
+  coachConvId = data.id;
+  return coachConvId;
+}
+
+async function coachSaveMessage(role, content) {
+  if (!currentUser || !coachConvId) return;
+  try {
+    await sb.from("coach_messages").insert({ conversation_id: coachConvId, user_id: currentUser.id, role: role, content: content });
+    await sb.from("coach_conversations").update({ updated_at: new Date().toISOString() }).eq("id", coachConvId);
+  } catch (e) { /* best-effort — chat still works in-memory if save fails */ }
+}
+
+function coachDateShort(iso) {
+  try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+  catch (e) { return ""; }
+}
+
+function coachNewChat() {
+  coachConvId = null;
+  advisorHistory.length = 0;
+  const body = document.getElementById("advisorBody");
+  if (body) { clear(body); body.appendChild(coachEmptyNode()); }
+  hideCoachHistory();
+}
+
+function hideCoachHistory() {
+  const p = document.getElementById("coachHistory");
+  if (p) p.style.display = "none";
+}
+
+async function toggleCoachHistory() {
+  const panel = document.getElementById("coachHistory");
+  if (!panel) return;
+  if (panel.style.display === "none") { panel.style.display = "block"; await renderCoachHistory(); }
+  else panel.style.display = "none";
+}
+
+async function renderCoachHistory() {
+  const panel = document.getElementById("coachHistory");
+  if (!panel) return;
+  clear(panel);
+  if (!currentUser) { panel.appendChild(el("div", { class: "ch-empty", text: "Sign in to see your saved conversations." })); return; }
+  const { data, error } = await sb.from("coach_conversations")
+    .select("id,title,updated_at").order("updated_at", { ascending: false }).limit(50);
+  const convos = error ? [] : (data || []);
+  if (!convos.length) { panel.appendChild(el("div", { class: "ch-empty", text: "No saved conversations yet — your chats will show up here." })); return; }
+  convos.forEach(c => {
+    const row = el("div", { class: "ch-row" }, [
+      el("span", { class: "ch-title", text: c.title || "Conversation" }),
+      el("span", { class: "ch-date", text: coachDateShort(c.updated_at) }),
+      el("button", { class: "ch-del", text: "×", title: "Delete conversation", on: { click: ev => { ev.stopPropagation(); coachDeleteConversation(c.id); } } }),
+    ]);
+    row.addEventListener("click", () => coachOpenConversation(c.id));
+    panel.appendChild(row);
+  });
+}
+
+async function coachOpenConversation(id) {
+  if (!currentUser) return;
+  const { data, error } = await sb.from("coach_messages")
+    .select("role,content").eq("conversation_id", id).order("created_at", { ascending: true });
+  if (error) { advisorError("Couldn't load that conversation."); return; }
+  coachConvId = id;
+  advisorHistory.length = 0;
+  const body = document.getElementById("advisorBody");
+  clear(body);
+  (data || []).forEach(m => { advisorHistory.push({ role: m.role, content: m.content }); advisorRenderMsg(m.role, m.content); });
+  hideCoachHistory();
+  advisorScroll();
+}
+
+async function coachDeleteConversation(id) {
+  if (!currentUser) return;
+  if (!confirm("Delete this conversation? This can't be undone.")) return;
+  await sb.from("coach_conversations").delete().eq("id", id); // cascade removes its messages
+  if (coachConvId === id) coachNewChat();
+  renderCoachHistory();
+}
 
 // Compact, model-friendly snapshot of the current budget + credit picture.
 function buildSnapshot() {
@@ -3820,10 +3933,15 @@ async function runAdvisor(userText) {
     if (!res.ok) { advisorError(data.error || "The advisor is unavailable right now."); return; }
 
     const reply = String(data.reply || "").trim();
-    if (userText) advisorHistory.push({ role: "user", content: userText });
-    else advisorHistory.push({ role: "user", content: "[Analyze my budget]" });
+    const uContent = userText || "[Analyze my budget]";
+    advisorHistory.push({ role: "user", content: uContent });
     advisorHistory.push({ role: "assistant", content: reply });
     advisorRenderMsg("assistant", reply);
+
+    // Persist this exchange so it can be revisited from History.
+    await coachEnsureConversation(uContent);
+    await coachSaveMessage("user", uContent);
+    await coachSaveMessage("assistant", reply);
   } catch (e) {
     advisorSetBusy(false);
     advisorError("Couldn't reach the coach. Check your connection and try again.");
@@ -4829,6 +4947,7 @@ function onSignedIn(session) {
 }
 function onSignedOut() {
   currentUser = null;
+  coachNewChat(); // clear any loaded conversation from the UI
   showGate();
 }
 
@@ -5155,6 +5274,8 @@ function init() {
   document.getElementById("analyzeBtn").addEventListener("click", () => runAdvisor(""));
   document.getElementById("advisorSend").addEventListener("click", sendAdvisorInput);
   document.getElementById("advisorInput").addEventListener("keydown", e => { if (e.key === "Enter") sendAdvisorInput(); });
+  document.getElementById("coachNewBtn").addEventListener("click", coachNewChat);
+  document.getElementById("coachHistoryBtn").addEventListener("click", toggleCoachHistory);
 
   // Auth wiring
   document.getElementById("authSend").addEventListener("click", sendLink);
