@@ -149,7 +149,21 @@ async function saveCursor(userId, itemId, cursor) {
   });
 }
 
+// Disconnect: invalidate each access token at Plaid (/item/remove), then delete
+// the rows so the user can re-link (e.g. with a different login). Returns count.
+async function removeItems(userId) {
+  const items = await listItems(userId);
+  for (const it of items) {
+    try { await plaid("/item/remove", { access_token: it.accessToken }); }
+    catch (e) { /* token already invalid at Plaid — still drop our row */ }
+  }
+  const url = SUPABASE_URL + "/rest/v1/plaid_items?user_id=eq." + encodeURIComponent(userId);
+  const r = await fetch(url, { method: "DELETE", headers: Object.assign(adminHeaders(), { Prefer: "return=minimal" }) });
+  if (!r.ok) throw new Error("delete plaid_items failed " + r.status + " " + (await r.text().catch(() => "")));
+  return items.length;
+}
+
 module.exports = {
   PLAID_ENV, PLAID_PRODUCTS, sendJSON, verifyUser, encrypt, decrypt, plaid,
-  saveItem, listItems, saveCursor,
+  saveItem, listItems, saveCursor, removeItems,
 };

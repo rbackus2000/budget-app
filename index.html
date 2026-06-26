@@ -1533,6 +1533,7 @@
       <div class="bills-actions">
         <button class="btn-upload" id="plaidConnectBtn" title="Securely connect your bank via Plaid to auto-fill balances, credit cards, and spending">🔗 Connect bank</button>
         <button class="btn-add-item" id="plaidSyncBtn" style="display:none">↻ Sync now</button>
+        <button class="btn-add-item" id="plaidDisconnectBtn" style="display:none" title="Unlink this bank so you can reconnect with a different login">⨯ Disconnect</button>
       </div>
     </div>
     <div id="plaidStatus" class="hint" style="margin-top:6px">Connect your bank to pull real balances, credit-card APR/limit/due dates, and spending automatically. Bank-level encryption; your login is never seen by this app.</div>
@@ -4786,12 +4787,39 @@ function plaidApply(d) {
 function plaidRefreshUI() {
   const sync = document.getElementById("plaidSyncBtn");
   const connect = document.getElementById("plaidConnectBtn");
-  if (sync && connect && state.plaidSyncedAt) {
-    sync.style.display = "";
-    connect.textContent = "🔗 Connect another bank";
-  }
+  const disc = document.getElementById("plaidDisconnectBtn");
+  const connected = !!state.plaidSyncedAt;
+  if (sync) sync.style.display = connected ? "" : "none";
+  if (disc) disc.style.display = connected ? "" : "none";
+  if (connect) connect.textContent = connected ? "🔗 Connect another bank" : "🔗 Connect bank";
   plaidRenderSpending();
   plaidRenderTxns();
+}
+
+// Unlink the bank at Plaid + remove auto-imported cards, so the user can
+// reconnect (e.g. with a spouse's login that sees more accounts).
+async function plaidDisconnect() {
+  if (!currentUser) { plaidSetStatus("Sign in first."); return; }
+  if (!confirm("Disconnect your bank?\n\nThis unlinks Plaid and removes the auto-imported credit cards (your manually added bills and data stay). You can reconnect right after — e.g. with a different login.")) return;
+  const token = await getAuthToken();
+  if (!token) { plaidSetStatus("Your session expired — sign in again."); return; }
+  plaidSetStatus("Disconnecting…");
+  try {
+    const r = await fetch("/api/plaid/disconnect", { method: "POST", headers: { Authorization: "Bearer " + token } });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "disconnect failed");
+    // Drop auto-imported cards (matched by Plaid account id) and clear bank-feed state.
+    state.bills = state.bills.filter(b => !b.plaidAccountId);
+    state.plaidSyncedAt = ""; state.plaidAccounts = null; state.plaidEnv = null;
+    state.plaidIncome = null; state.plaidRecurringBills = null; state.plaidVariable = null;
+    state.plaidSpending = null; state.plaidRecent = null;
+    plaidClearLinkToken();
+    save(); recalcAll();
+    plaidRefreshUI();
+    plaidSetStatus("✓ Bank disconnected. Tap “Connect bank” to link a different login.");
+  } catch (e) {
+    plaidSetStatus("Couldn't disconnect — " + (e && e.message ? e.message : "try again."));
+  }
 }
 
 // Full transaction feed pulled from the bank — everything auto-filled, newest
@@ -6041,6 +6069,7 @@ function init() {
   // Plaid bank connection
   document.getElementById("plaidConnectBtn").addEventListener("click", plaidConnect);
   document.getElementById("plaidSyncBtn").addEventListener("click", () => plaidSync(false));
+  document.getElementById("plaidDisconnectBtn").addEventListener("click", plaidDisconnect);
   plaidCheckOAuthReturn(); // resume Link if we're returning from a bank's OAuth page
 
   // Affordability calculator
