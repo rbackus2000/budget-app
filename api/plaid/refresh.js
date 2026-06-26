@@ -105,6 +105,30 @@ function spendingSummary(txns) {
   return { total: +total.toFixed(2), monthly: +(total / m).toFixed(2), months: m, count, byCategory };
 }
 
+// Sum of currently-pending OUTFLOWS per account, from a short recent window via
+// /transactions/get (which returns the full window every call, unlike the
+// incremental /transactions/sync). Lets us estimate `available` when a bank
+// (e.g. Capital One) returns it as null: available ≈ current − pending holds.
+async function pendingOutflowByAccount(accessToken) {
+  const out = {};
+  try {
+    const end = new Date();
+    const start = new Date(end.getTime() - 14 * 24 * 3600 * 1000);
+    const ymd = d => d.toISOString().slice(0, 10);
+    const r = await plaid("/transactions/get", {
+      access_token: accessToken,
+      start_date: ymd(start), end_date: ymd(end),
+      options: { count: 500, offset: 0 },
+    });
+    (r.transactions || []).forEach(t => {
+      if (!t.pending) return;
+      const amt = num(t.amount); // Plaid: positive = money out (a hold)
+      if (amt > 0) out[t.account_id] = (out[t.account_id] || 0) + amt;
+    });
+  } catch (e) { /* PRODUCT_NOT_READY / unsupported — skip, fall back to current */ }
+  return out;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET")
     return sendJSON(res, 405, { error: "Method not allowed" });
@@ -147,11 +171,21 @@ module.exports = async function handler(req, res) {
         } else { throw le; }
       }
 
+      // When the bank reports no `available` (Capital One does this), estimate
+      // the spendable balance as current minus pending holds.
+      const pendingAcct = await pendingOutflowByAccount(it.accessToken);
+
       accountsRaw.forEach(a => {
         const bal = a.balances || {};
+        let available = bal.available == null ? null : num(bal.available);
+        let availableEstimated = false;
+        if (available == null && a.type === "depository") {
+          const pend = pendingAcct[a.account_id];
+          if (pend != null && pend >= 0.01) { available = +(num(bal.current) - pend).toFixed(2); availableEstimated = true; }
+        }
         accounts.push({
           name: a.name, mask: a.mask, type: a.type, subtype: a.subtype,
-          balance: num(bal.current), available: bal.available == null ? null : num(bal.available),
+          balance: num(bal.current), available: available, availableEstimated: availableEstimated,
           limit: bal.limit == null ? null : num(bal.limit),
           institution: it.institutionName || null,
         });

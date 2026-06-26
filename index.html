@@ -4567,8 +4567,8 @@ function plaidRenderSpending() {
       const cur = num(a.balance);
       const nm = (a.name || a.subtype || "Account") + (a.mask ? " ••" + a.mask : "");
       let detail;
-      if (avail == null) detail = "$" + Math.round(cur).toLocaleString() + " (bank didn't report available)";
-      else if (Math.abs(cur - avail) >= 1) detail = "$" + Math.round(avail).toLocaleString() + " available · $" + Math.round(cur).toLocaleString() + " current · $" + Math.round(cur - avail).toLocaleString() + " pending";
+      if (avail == null) detail = "$" + Math.round(cur).toLocaleString() + " (bank didn't report available; no pending found)";
+      else if (Math.abs(cur - avail) >= 1) detail = "$" + Math.round(avail).toLocaleString() + " available" + (a.availableEstimated ? " (est. from pending)" : "") + " · $" + Math.round(cur).toLocaleString() + " current · $" + Math.round(cur - avail).toLocaleString() + " pending";
       else detail = "$" + Math.round(avail).toLocaleString();
       line("• " + nm + ":", detail);
     });
