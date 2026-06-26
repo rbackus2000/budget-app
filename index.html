@@ -1188,6 +1188,9 @@
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
   .toast.info { border-color: var(--accent); }
+  .toast.has-action { display: flex; align-items: center; gap: 14px; text-align: left; }
+  .toast-action { background: var(--accent-fill); color: var(--accent-ink); border: none; border-radius: 8px; padding: 7px 14px; font: 700 .82rem inherit; cursor: pointer; flex-shrink: 0; }
+  .toast-action:hover { filter: brightness(1.05); }
 
   /* Roll-cycle confirm + batch review */
   .confirm-text { font-size: .9rem; line-height: 1.55; color: var(--text); }
@@ -3321,12 +3324,13 @@ function detailRow(bill) {
 
 function logPayment(bill, amount, kind) {
   amount = num(amount);
-  if (amount <= 0) return;
+  if (amount <= 0) return null;
   if (!Array.isArray(bill.payments)) bill.payments = [];
   const id = (bill.payments.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1) || 1;
   bill.payments.push({ id, amount, kind: kind === "min" ? "min" : "extra", date: new Date().toISOString() });
   save();
   renderBills(); renderPaydayPlan(); renderCredit(); renderBank();
+  return id;
 }
 
 function deletePayment(bill, pid) {
@@ -4064,13 +4068,21 @@ function renderCredit() {
         acts.appendChild(el("button", {
           class: "btn-pay sm", title: "Log this as an extra payment toward the card",
           text: "✓ I paid " + fmt(payDown),
-          on: { click: () => { logPayment(card, payDown, "extra"); toast("Logged " + fmt(payDown) + " to " + (card.name || "card") + " — undo in the payments panel"); } },
+          on: { click: () => {
+            const pid = logPayment(card, payDown, "extra");
+            toast("Logged " + fmt(payDown) + " to " + (card.name || "card"), false,
+              pid ? { label: "Undo", onClick: () => { deletePayment(card, pid); toast("Payment removed"); } } : null);
+          } },
         }));
       }
       acts.appendChild(el("button", {
         class: "btn-pay ghost sm",
         text: "Paid in full (" + fmt(bal) + ")",
-        on: { click: () => { logPayment(card, bal, "extra"); toast((card.name || "Card") + " marked paid in full"); } },
+        on: { click: () => {
+          const pid = logPayment(card, bal, "extra");
+          toast((card.name || "Card") + " marked paid in full", false,
+            pid ? { label: "Undo", onClick: () => { deletePayment(card, pid); toast((card.name || "Card") + " restored"); } } : null);
+        } },
       }));
       row.appendChild(acts);
     }
@@ -4539,11 +4551,17 @@ function showLoading(msg) {
 }
 function hideLoading() { const o = document.getElementById("loadingOverlay"); if (o) o.remove(); }
 
-function toast(msg, info) {
-  const t = el("div", { class: "toast" + (info ? " info" : "") , text: msg });
+function toast(msg, info, action) {
+  const dismiss = () => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); };
+  const t = el("div", { class: "toast" + (info ? " info" : "") + (action ? " has-action" : "") }, [
+    el("span", { text: msg }),
+  ]);
+  if (action && action.label) {
+    t.appendChild(el("button", { class: "toast-action", text: action.label, on: { click: () => { dismiss(); try { action.onClick(); } catch (e) {} } } }));
+  }
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add("show"));
-  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, info ? 7000 : 4500);
+  setTimeout(dismiss, (info || action) ? 7000 : 4500);
 }
 
 // Read a File as base64 (strip the "data:...;base64," prefix).
