@@ -177,9 +177,13 @@ module.exports = async function handler(req, res) {
     return sendJSON(res, 400, { error: "Missing budget snapshot." });
   }
 
-  // Build the message list: prior turns, then the new user turn. The current
-  // budget snapshot rides with the latest user message so the model always
-  // reasons over fresh numbers without bloating cached history.
+  // The snapshot is large (especially with the transaction feed) and stable
+  // within a chat session, so it rides as a CACHED system block — not appended
+  // to each user turn. Prompt caching then bills it at ~10% on follow-up turns
+  // instead of re-sending it at full price every message. It's still rebuilt
+  // fresh each turn client-side, so identical rebuilds hit the cache and a real
+  // data change (a re-sync) misses once and re-caches. Conversation history +
+  // the new question are the small, uncached suffix.
   const messages = [];
   history.slice(-MAX_MESSAGES).forEach(m => {
     const role = m && m.role === "assistant" ? "assistant" : "user";
@@ -189,8 +193,7 @@ module.exports = async function handler(req, res) {
 
   const snapshotJSON = JSON.stringify(snapshot).slice(0, 90000);
   const turn = userText
-    ? userText + "\n\n---\nCurrent budget snapshot (JSON):\n" + snapshotJSON
-    : "Analyze my budget and credit picture. Give me a clear read on where I stand and the most important moves to make right now.\n\n---\nCurrent budget snapshot (JSON):\n" + snapshotJSON;
+    || "Analyze my budget and credit picture. Give me a clear read on where I stand and the most important moves to make right now.";
   messages.push({ role: "user", content: turn });
 
   try {
@@ -206,7 +209,14 @@ module.exports = async function handler(req, res) {
         max_tokens: MAX_TOKENS,
         thinking: { type: "adaptive" },
         output_config: { effort: EFFORT },
-        system: SYSTEM_PROMPT,
+        // Two cache breakpoints (prompt caching is GA on Opus 4.8 — no beta
+        // header). The frozen prompt is < the 4096-token cache minimum so it
+        // won't cache standalone, but prompt + snapshot clears it and caches —
+        // so the heavy snapshot is billed at ~10% on repeat turns in a session.
+        system: [
+          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+          { type: "text", text: "The user's current financial snapshot (JSON) — reason over these exact numbers:\n" + snapshotJSON, cache_control: { type: "ephemeral" } },
+        ],
         messages: messages,
       }),
     });
@@ -223,6 +233,12 @@ module.exports = async function handler(req, res) {
     }
 
     const data = await r.json();
+    // Cache telemetry: read>0 on follow-up turns means the snapshot is being
+    // served from cache (~10% cost) instead of re-billed in full.
+    const u = (data && data.usage) || {};
+    console.log("advisor usage: cache_read=" + (u.cache_read_input_tokens || 0) +
+      " cache_write=" + (u.cache_creation_input_tokens || 0) +
+      " input=" + (u.input_tokens || 0) + " output=" + (u.output_tokens || 0));
     const reply = Array.isArray(data.content)
       ? data.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim()
       : "";
