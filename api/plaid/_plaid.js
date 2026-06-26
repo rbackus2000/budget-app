@@ -30,6 +30,14 @@ const PLAID_HOST =
     ? "https://production.plaid.com"
     : "https://sandbox.plaid.com";
 
+// Which Plaid products to request at Link time. Defaults to "transactions"
+// only — Liabilities requires separate production approval, and asking for a
+// product the account isn't enabled for makes /link/token/create fail outright
+// (INVALID_PRODUCT). Once Liabilities is approved, set PLAID_PRODUCTS to
+// "transactions,liabilities" in Vercel and redeploy — no code change needed.
+const PLAID_PRODUCTS = (process.env.PLAID_PRODUCTS || "transactions")
+  .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+
 function sendJSON(res, status, obj) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -142,6 +150,6 @@ async function saveCursor(userId, itemId, cursor) {
 }
 
 module.exports = {
-  PLAID_ENV, sendJSON, verifyUser, encrypt, decrypt, plaid,
+  PLAID_ENV, PLAID_PRODUCTS, sendJSON, verifyUser, encrypt, decrypt, plaid,
   saveItem, listItems, saveCursor,
 };

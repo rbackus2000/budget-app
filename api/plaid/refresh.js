@@ -126,12 +126,23 @@ module.exports = async function handler(req, res) {
   const itemErrors = [];
   for (const it of items) {
     try {
-      // Balances + credit liabilities in one /liabilities/get (includes accounts).
-      const liab = await plaid("/liabilities/get", { access_token: it.accessToken });
-      const creditByAccount = {};
-      (((liab.liabilities || {}).credit) || []).forEach(c => { creditByAccount[c.account_id] = c; });
+      // Balances (+ credit liabilities when that product is enabled). Liabilities
+      // supplies APR / limit / min / due / statement day; without it (Transactions
+      // only), fall back to /accounts/get so the sync still returns balances.
+      let accountsRaw, creditByAccount = {};
+      try {
+        const liab = await plaid("/liabilities/get", { access_token: it.accessToken });
+        accountsRaw = liab.accounts || [];
+        (((liab.liabilities || {}).credit) || []).forEach(c => { creditByAccount[c.account_id] = c; });
+      } catch (le) {
+        const lc = le && le.plaid && le.plaid.error_code;
+        if (["INVALID_PRODUCT", "PRODUCTS_NOT_SUPPORTED", "NO_LIABILITY_ACCOUNTS", "PRODUCT_NOT_READY"].indexOf(lc) >= 0) {
+          const acc = await plaid("/accounts/get", { access_token: it.accessToken });
+          accountsRaw = acc.accounts || [];
+        } else { throw le; }
+      }
 
-      (liab.accounts || []).forEach(a => {
+      accountsRaw.forEach(a => {
         const bal = a.balances || {};
         accounts.push({
           name: a.name, mask: a.mask, type: a.type, subtype: a.subtype,

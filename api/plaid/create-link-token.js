@@ -1,6 +1,6 @@
 /* /api/plaid/create-link-token — start a Plaid Link session (owner-only) */
 "use strict";
-const { sendJSON, verifyUser, plaid } = require("./_plaid");
+const { sendJSON, verifyUser, plaid, PLAID_PRODUCTS } = require("./_plaid");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") return sendJSON(res, 405, { error: "Method not allowed" });
@@ -13,8 +13,11 @@ module.exports = async function handler(req, res) {
       language: "en",
       country_codes: ["US"],
       user: { client_user_id: user.id },
-      // Phase 1 scope: real balances, credit-card liabilities, and spending.
-      products: ["transactions", "liabilities"],
+      // Products are env-driven (PLAID_PRODUCTS) so we only ever request what the
+      // account is approved for — asking for an unapproved product (e.g.
+      // liabilities) fails the whole Link with INVALID_PRODUCT. Default:
+      // transactions (real balances + spending + recurring income/bills).
+      products: PLAID_PRODUCTS,
       transactions: { days_requested: 180 }, // 180+ improves recurring stream detection
     };
     // Required for OAuth banks (most major banks in Production). Must be an
