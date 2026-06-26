@@ -271,6 +271,7 @@ module.exports = async function handler(req, res) {
     .map(t => ({
       date: t.date, name: t.merchant_name || t.name, amount: num(t.amount),
       category: (t.personal_finance_category && t.personal_finance_category.primary) || null,
+      detail: (t.personal_finance_category && t.personal_finance_category.detailed) || null,
       pending: !!t.pending,
       account: acctLabel[t.account_id] || null,
     }));
