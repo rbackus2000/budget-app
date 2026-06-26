@@ -938,6 +938,30 @@
   .fs-grid { display:grid; grid-template-columns:1.55fr 1.04fr 1.02fr; gap:13px; }
   .fs-col { display:flex; flex-direction:column; gap:13px; min-width:0; }
   .fs-card { background:var(--fs-card-bg); border:1px solid var(--fs-card-border); border-radius:20px; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+
+  /* Cockpit: per-paycheck breakdown strip */
+  .fs-paywrap { margin-bottom: 18px; }
+  .fs-strip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .fs-strip-sub { font-size: 12.5px; color: var(--fs-dim); }
+  .fs-paystrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .fs-pcard { padding: 18px 20px; cursor: pointer; transition: border-color .15s, transform .15s; }
+  .fs-pcard:hover { transform: translateY(-2px); }
+  .fs-pcard.now { border-color: var(--accent); }
+  .fs-pc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--fs-row-border); }
+  .fs-pc-when { font-weight: 700; font-size: 15px; color: var(--fs-bright); }
+  .fs-pcard.now .fs-pc-when { color: var(--accent); }
+  .fs-pc-in { font: 700 16px var(--fs-mono); color: var(--accent); }
+  .fs-pc-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; }
+  .fs-pc-row + .fs-pc-row { border-top: 1px solid var(--fs-row-border); }
+  .fs-pc-lbl { font-size: 13px; color: var(--fs-mid); display: flex; align-items: center; gap: 8px; }
+  .fs-pc-lbl::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: var(--fs-mid); flex: none; }
+  .fs-pc-row.bills .fs-pc-lbl::before { background: #e0a800; }
+  .fs-pc-row.wants .fs-pc-lbl::before { background: #4aa3ff; }
+  .fs-pc-row.save .fs-pc-lbl::before { background: var(--accent); }
+  .fs-pc-val { font: 600 15px var(--fs-mono); color: var(--fs-bright); }
+  .fs-pc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 11px; border-top: 1px solid var(--fs-row-border); font-size: 12px; color: var(--fs-dim); }
+  .fs-pc-foot .short { color: var(--red); font-weight: 700; }
+  @media (max-width: 820px) { .fs-paystrip { grid-template-columns: 1fr; } }
   .fs-chead { display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .fs-ctitle { margin:0; font-size:19px; font-weight:600; color:var(--fs-bright); }
   .fs-expand { color:var(--fs-dim); cursor:pointer; flex:none; }
@@ -5574,6 +5598,42 @@ function renderHome() {
   }
   acct.appendChild(accWrap);
   const colC = el("div", { class: "fs-col" }, [tx, acct]);
+
+  /* ---------------- COCKPIT: PER-PAYCHECK BREAKDOWN ---------------- *
+   *  The headline of the cockpit: each upcoming check split into Bills, *
+   *  Wants, and Savings & Debt — the at-a-glance "where does each check  *
+   *  go?". Pulled live from the same payday plan the Plan tab uses.      */
+  const payWins = (plan && plan.windows.length) ? plan.windows.slice(0, 3) : [];
+  if (payWins.length) {
+    const strip = el("div", { class: "fs-paystrip" });
+    payWins.forEach((w, i) => {
+      const billsTot = w.minTotal || 0;
+      const wantsTot = w.funEarmark || 0;
+      const saveTot = (w.extraTotal || 0) + (w.goalLeftover || 0);
+      const card = el("div", { class: "fs-card fs-pcard" + (i === 0 ? " now" : ""), on: { click: () => showView("plan") } });
+      card.appendChild(el("div", { class: "fs-pc-head" }, [
+        el("span", { class: "fs-pc-when", title: dateShort(w.date), text: i === 0 ? "This check" : dateShort(w.date).replace(/^\w+, /, "") }),
+        el("span", { class: "fs-pc-in", text: "+" + moneyStr(w.amount) }),
+      ]));
+      [["Bills", billsTot, "bills"], ["Wants", wantsTot, "wants"], ["Savings / Debt", saveTot, "save"]].forEach(r =>
+        card.appendChild(el("div", { class: "fs-pc-row " + r[2] }, [
+          el("span", { class: "fs-pc-lbl", text: r[0] }),
+          el("span", { class: "fs-pc-val", text: moneyStr(r[1]) }),
+        ])));
+      card.appendChild(el("div", { class: "fs-pc-foot" }, [
+        el("span", { text: "Left after this check" }),
+        el("span", { class: w.shortfall > 0 ? "short" : "", text: w.shortfall > 0 ? "−" + moneyStr(w.shortfall) : moneyStr(w.endBalance) }),
+      ]));
+      strip.appendChild(card);
+    });
+    grid.appendChild(el("div", { class: "fs-paywrap" }, [
+      el("div", { class: "fs-strip-head" }, [
+        el("h3", { class: "fs-ctitle", text: "Your next paychecks" }),
+        el("span", { class: "fs-strip-sub", text: "Where each check goes — tap to open the plan" }),
+      ]),
+      strip,
+    ]));
+  }
 
   grid.appendChild(el("div", { class: "fs-grid" }, [colA, colB, colC]));
 }
