@@ -120,12 +120,20 @@ async function pendingOutflowByAccount(accessToken) {
       start_date: ymd(start), end_date: ymd(end),
       options: { count: 500, offset: 0 },
     });
-    (r.transactions || []).forEach(t => {
+    const txns = r.transactions || [];
+    const pend = txns.filter(t => t.pending);
+    // Diagnostic: is Capital One sending pending txns, or is this endpoint empty?
+    console.log("pending probe: total_transactions=" + (r.total_transactions != null ? r.total_transactions : "?") +
+      " returned=" + txns.length + " pending=" + pend.length +
+      (pend.length ? " sample=" + JSON.stringify(pend.slice(0, 3).map(t => ({ amt: t.amount, name: t.merchant_name || t.name, date: t.date }))) : ""));
+    txns.forEach(t => {
       if (!t.pending) return;
       const amt = num(t.amount); // Plaid: positive = money out (a hold)
       if (amt > 0) out[t.account_id] = (out[t.account_id] || 0) + amt;
     });
-  } catch (e) { /* PRODUCT_NOT_READY / unsupported — skip, fall back to current */ }
+  } catch (e) {
+    console.error("pending probe failed:", (e && e.plaid && e.plaid.error_code) || (e && e.message));
+  }
   return out;
 }
 
