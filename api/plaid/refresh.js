@@ -128,7 +128,12 @@ module.exports = async function handler(req, res) {
     try {
       // Balances (+ credit liabilities when that product is enabled). Liabilities
       // supplies APR / limit / min / due / statement day; without it (Transactions
-      // only), fall back to /accounts/get so the sync still returns balances.
+      // only), fall back to /accounts/balance/get so the sync still returns
+      // balances. Use /accounts/balance/get (not /accounts/get) because it forces
+      // a fresh pull that populates `available` — the spendable balance that
+      // already nets out pending transactions. /accounts/get returns cached
+      // balances where `available` is often null, which made the bank total fall
+      // back to `current` (overstated by pending charges).
       let accountsRaw, creditByAccount = {};
       try {
         const liab = await plaid("/liabilities/get", { access_token: it.accessToken });
@@ -137,7 +142,7 @@ module.exports = async function handler(req, res) {
       } catch (le) {
         const lc = le && le.plaid && le.plaid.error_code;
         if (["INVALID_PRODUCT", "PRODUCTS_NOT_SUPPORTED", "NO_LIABILITY_ACCOUNTS", "PRODUCT_NOT_READY"].indexOf(lc) >= 0) {
-          const acc = await plaid("/accounts/get", { access_token: it.accessToken });
+          const acc = await plaid("/accounts/balance/get", { access_token: it.accessToken });
           accountsRaw = acc.accounts || [];
         } else { throw le; }
       }
