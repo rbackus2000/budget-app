@@ -1903,7 +1903,13 @@ function el(tag, opts, children) {
     if (opts.text != null) node.textContent = opts.text;
     if (opts.title != null) node.title = opts.title;
     if (opts.attrs) for (const k in opts.attrs) node.setAttribute(k, opts.attrs[k]);
-    if (opts.style) for (const k in opts.style) node.style[k] = opts.style[k];
+    if (opts.style) {
+      // Accept either a CSS string ("margin-top:4px") or a property map.
+      // Iterating a string with for..in would set style[0], style[1]… which
+      // throws "Indexed property setter is not supported".
+      if (typeof opts.style === "string") node.style.cssText = opts.style;
+      else for (const k in opts.style) node.style[k] = opts.style[k];
+    }
     if (opts.on) for (const ev in opts.on) node.addEventListener(ev, opts.on[ev]);
     if (opts.props) for (const k in opts.props) node[k] = opts.props[k];
   }
