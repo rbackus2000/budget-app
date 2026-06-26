@@ -939,6 +939,16 @@
   .fs-col { display:flex; flex-direction:column; gap:13px; min-width:0; }
   .fs-card { background:var(--fs-card-bg); border:1px solid var(--fs-card-border); border-radius:20px; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
 
+  /* Total spending: labeled top-category list */
+  .fs-spendlist { display: flex; flex-direction: column; gap: 12px; }
+  .fs-spendrow { display: flex; flex-direction: column; gap: 6px; }
+  .fs-spendtop { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .fs-spendname { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fs-mid); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fs-spenddot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .fs-spendamt { font: 600 13px var(--fs-mono); color: var(--fs-bright); white-space: nowrap; }
+  .fs-spendbar { height: 7px; border-radius: 4px; background: var(--fs-row); overflow: hidden; }
+  .fs-spendbar > span { display: block; height: 100%; border-radius: 4px; }
+
   /* Hidden native date input behind the segment's "Date" button */
   .fs-date-hidden { position: absolute; width: 0; height: 0; padding: 0; margin: 0; border: 0; opacity: 0; pointer-events: none; }
 
@@ -5397,8 +5407,12 @@ function renderHome() {
     if (homePeriod === "date") return homePeriodDate && d === homePeriodDate;
     return d.slice(0, 7) === tdy.slice(0, 7); // this month
   };
-  const periodTxns = feed.filter(inPeriod);
-  const periodSpend = periodTxns.reduce((s, t) => { const a = Number(t.amount) || 0; return s + (a > 0 ? a : 0); }, 0);
+  // Real spending only: positive outflows, excluding transfers and loan/card
+  // payments (moving money or paying debt isn't "spending"). Matches the
+  // server's spendingSummary so the figure isn't inflated by a $20k transfer.
+  const SKIP_SPEND = { TRANSFER_IN: 1, TRANSFER_OUT: 1, LOAN_PAYMENTS: 1, BANK_FEES: 1 };
+  const periodTxns = feed.filter(inPeriod).filter(t => { const a = Number(t.amount) || 0; return a > 0 && !SKIP_SPEND[t.category]; });
+  const periodSpend = periodTxns.reduce((s, t) => s + (Number(t.amount) || 0), 0);
   const periodLabel = homePeriod === "today" ? "today"
     : homePeriod === "date" ? (homePeriodDate ? (parseDate(homePeriodDate) ? parseDate(homePeriodDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : homePeriodDate) : "selected day")
     : "this month";
@@ -5585,19 +5599,22 @@ function renderHome() {
   } else {
     spendBar = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).slice(0, 8);
   }
+  // Labeled "top categories" list — each row names the category, its amount,
+  // and a proportional bar, so it's actually readable (no mystery letter chips).
   if (spendBar.length) {
-    const maxBar = Math.max.apply(null, spendBar.map(x => x.value).concat([1]));
-    const barsWrap = el("div", { class: "fs-bars" });
-    const chips = el("div", { class: "fs-chips" });
-    spendBar.forEach(b => {
-      const hi = b.value === maxBar;
-      const hPct = Math.max(14, Math.round(b.value / maxBar * 100));
-      barsWrap.appendChild(el("div", { class: "fs-barcol" }, [
-        el("div", { class: "fs-bar" + (hi ? " hi" : ""), style: { height: hPct + "%" } }, [el("span", { class: "vlabel", text: "$ " + Math.round(b.value).toLocaleString("en-US") })]),
+    const maxV = Math.max.apply(null, spendBar.map(x => x.value).concat([1]));
+    const list = el("div", { class: "fs-spendlist" });
+    spendBar.slice(0, 6).forEach((b, i) => {
+      const color = i === 0 ? "var(--accent)" : fsColor(b.name);
+      list.appendChild(el("div", { class: "fs-spendrow" }, [
+        el("div", { class: "fs-spendtop" }, [
+          el("span", { class: "fs-spendname" }, [el("span", { class: "fs-spenddot", style: { background: color } }), document.createTextNode(b.name)]),
+          el("span", { class: "fs-spendamt", text: "$" + Math.round(b.value).toLocaleString("en-US") }),
+        ]),
+        el("div", { class: "fs-spendbar" }, [el("span", { style: { width: Math.max(3, Math.round(b.value / maxV * 100)) + "%", background: color } })]),
       ]));
-      chips.appendChild(el("div", { class: "fs-chip" }, [el("span", { style: { background: hi ? "var(--accent)" : fsColor(b.name), color: hi ? "#1a1b0c" : "#fff" }, text: b.name.charAt(0).toUpperCase() })]));
     });
-    ts.appendChild(el("div", { style: { marginTop: "18px" } }, [barsWrap, chips]));
+    ts.appendChild(el("div", { style: { marginTop: "16px" } }, [list]));
   } else if (hasFeed) {
     ts.appendChild(el("div", { style: { marginTop: "18px", fontSize: "13px", color: "var(--fs-dim)" }, text: "No spending " + periodLabel + "." }));
   }
