@@ -4404,7 +4404,23 @@ function plaidOpenLink(linkToken, receivedRedirectUri) {
         await plaidSync();
       } catch (e) { plaidBusy = false; plaidSetStatus("Couldn't finish connecting — try again."); }
     },
-    onExit: (err) => { plaidBusy = false; plaidClearLinkToken(); plaidSetStatus(err ? "Connection cancelled." : "Connect your bank to auto-fill balances and cards."); },
+    onExit: (err, metadata) => {
+      plaidBusy = false; plaidClearLinkToken();
+      if (err) {
+        console.error("Plaid Link exit:", err, "metadata:", metadata);
+        const msg = err.display_message || err.error_message || err.error_code || "Connection cancelled.";
+        plaidSetStatus("Plaid: " + msg);
+      } else {
+        plaidSetStatus("Connect your bank to auto-fill balances and cards.");
+      }
+    },
+    // Surface the real reason even when the flow breaks mid-OAuth (the ERROR
+    // event carries error_code/error_message that onExit sometimes misses).
+    onEvent: (eventName, metadata) => {
+      console.log("Plaid event:", eventName, metadata);
+      if ((eventName === "ERROR" || (metadata && metadata.error_code)) && metadata)
+        plaidSetStatus("Plaid: " + (metadata.error_message || metadata.error_code || eventName));
+    },
   };
   if (receivedRedirectUri) cfg.receivedRedirectUri = receivedRedirectUri;
   window.Plaid.create(cfg).open();
