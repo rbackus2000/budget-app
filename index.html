@@ -4495,11 +4495,21 @@ function plaidApply(d) {
     bill.payments = []; // Plaid balance is authoritative — drop stale logged payments
   });
 
-  state.plaidSpending = d.spending || null;
-  state.plaidIncome = d.income || null;                 // recurring inflow = jobs
-  state.plaidRecurringBills = d.recurringBills || null; // recurring outflow = AT&T etc.
-  state.plaidVariable = d.variableSpending || null;     // one-off spending = Walmart etc.
-  state.plaidRecent = (d.transactions || []).slice(0, 50);
+  // Keep the per-account breakdown so the bank total is transparent (which
+  // accounts, and available vs current).
+  if (Array.isArray(d.accounts) && d.accounts.length) state.plaidAccounts = d.accounts;
+
+  // Only replace a summary when the new sync actually carries data.
+  // transactions/sync is INCREMENTAL — after the first full pull, a re-sync
+  // returns just the delta (often empty), which would otherwise wipe the good
+  // full-window spending/income summary. recurring/get can also transiently
+  // return nothing. Guarding preserves the last good figures.
+  if (d.spending && (d.spending.byCategory || []).length) state.plaidSpending = d.spending;
+  if (d.income && (d.income.streams || []).length) state.plaidIncome = d.income;
+  if (d.recurringBills && (d.recurringBills.streams || []).length) state.plaidRecurringBills = d.recurringBills;
+  if (d.variableSpending && ((d.variableSpending.byCategory || []).length || num(d.variableSpending.total)))
+    state.plaidVariable = d.variableSpending;
+  if ((d.transactions || []).length) state.plaidRecent = d.transactions.slice(0, 50);
   state.plaidEnv = d.env || state.plaidEnv || null; // "production" once live, else "sandbox"
   state.plaidSyncedAt = d.syncedAt || new Date().toISOString();
 
@@ -4544,6 +4554,25 @@ function plaidRenderSpending() {
   };
   const names = (streams, n) => (streams || []).slice(0, n)
     .map(s => s.name + " $" + Math.round(num(s.monthly)) + "/mo").join(" · ");
+
+  // Per-account balances so the bank total is transparent. We bank the
+  // AVAILABLE balance (spendable, nets out pending); show current + pending
+  // when they differ so a $33k current vs $28k available is obvious.
+  const accts = (state.plaidAccounts || []).filter(a => a.type === "depository");
+  if (accts.length) {
+    const bankTotal = accts.reduce((s, a) => s + (a.available != null ? num(a.available) : num(a.balance)), 0);
+    line("Cash (available):", "$" + Math.round(bankTotal).toLocaleString() + " across " + accts.length + " account" + (accts.length > 1 ? "s" : ""));
+    accts.forEach(a => {
+      const avail = a.available != null ? num(a.available) : null;
+      const cur = num(a.balance);
+      const nm = (a.name || a.subtype || "Account") + (a.mask ? " ••" + a.mask : "");
+      let detail;
+      if (avail == null) detail = "$" + Math.round(cur).toLocaleString() + " (bank didn't report available)";
+      else if (Math.abs(cur - avail) >= 1) detail = "$" + Math.round(avail).toLocaleString() + " available · $" + Math.round(cur).toLocaleString() + " current · $" + Math.round(cur - avail).toLocaleString() + " pending";
+      else detail = "$" + Math.round(avail).toLocaleString();
+      line("• " + nm + ":", detail);
+    });
+  }
 
   if (inc && inc.streams && inc.streams.length)
     line("Income (jobs):", "≈ $" + Math.round(num(inc.monthly)) + "/mo — " + names(inc.streams, 3));
