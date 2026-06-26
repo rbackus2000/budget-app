@@ -1814,6 +1814,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // UX-only allowlist — real enforcement is a database trigger on auth.users.
 const ALLOWED_EMAILS = ["rbackus2000@gmail.com", "bridgettehuff282@gmail.com"];
 let currentUser = null;
+let householdId = null; // the budget row shared by everyone in the household
 let syncTimer = null;
 const OWNER_KEY = "budgetPlanner.owner";
 
@@ -2030,15 +2031,28 @@ function scheduleCloudSync() {
   syncTimer = setTimeout(cloudSync, 700);
 }
 
+// Everyone in a household shares ONE budgets row, keyed by the household id.
+// Resolve it once per sign-in; fall back to the user's own id (solo user).
+async function resolveHousehold() {
+  if (!currentUser) { householdId = null; return; }
+  try {
+    const { data } = await sb.from("household_members")
+      .select("household_id").eq("member_id", currentUser.id).maybeSingle();
+    householdId = (data && data.household_id) || currentUser.id;
+  } catch (e) { householdId = currentUser.id; }
+}
+function budgetKey() { return householdId || (currentUser && currentUser.id) || null; }
+
 async function cloudSync() {
-  if (!currentUser) return;
+  const key = budgetKey();
+  if (!key) return;
   // Persist the raw state plus a precomputed, model-friendly snapshot. The
   // read-only /v1 API serves slices of this snapshot to external tools (e.g. a
   // ChatGPT Action) so the derivation logic stays in one place — right here.
   let snapshot = {};
   try { snapshot = buildSnapshot(); } catch (e) { snapshot = {}; }
   const { error } = await sb.from("budgets").upsert(
-    { user_id: currentUser.id, data: state, snapshot: snapshot, updated_at: new Date().toISOString() },
+    { user_id: key, data: state, snapshot: snapshot, updated_at: new Date().toISOString() },
     { onConflict: "user_id" }
   );
   setSyncStatus(error ? "error" : "saved");
@@ -2046,7 +2060,9 @@ async function cloudSync() {
 
 async function cloudLoad() {
   setSyncStatus("saving");
-  const { data, error } = await sb.from("budgets").select("data").eq("user_id", currentUser.id).maybeSingle();
+  await resolveHousehold();
+  const key = budgetKey();
+  const { data, error } = await sb.from("budgets").select("data").eq("user_id", key).maybeSingle();
   if (error) { setSyncStatus("error"); renderAll(); return; } // keep local cache on failure
 
   if (data && data.data && Object.keys(data.data).length) {
@@ -2058,12 +2074,12 @@ async function cloudLoad() {
     // (or signing in) refreshes what the /v1 API serves — no edit required.
     cloudSync();
   } else {
-    // No cloud row yet. Migrate local data up only if it belongs to this user.
+    // No cloud row yet. Migrate local data up only if it belongs to this household.
     const owner = localStorage.getItem(OWNER_KEY);
-    if (owner && owner !== currentUser.id) { state = defaultState(); normalizeState(); }
+    if (owner && owner !== key) { state = defaultState(); normalizeState(); }
     await cloudSync();                                  // push current state up
   }
-  localStorage.setItem(OWNER_KEY, currentUser.id);
+  localStorage.setItem(OWNER_KEY, key);
   applyTheme();
   renderAll();
   plaidRefreshUI();
