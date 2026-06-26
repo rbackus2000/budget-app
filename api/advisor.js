@@ -213,9 +213,11 @@ module.exports = async function handler(req, res) {
         // header). The frozen prompt is < the 4096-token cache minimum so it
         // won't cache standalone, but prompt + snapshot clears it and caches —
         // so the heavy snapshot is billed at ~10% on repeat turns in a session.
+        // 1-hour TTL keeps the cache warm across longer pauses mid-conversation
+        // (2x write cost vs the 5-min default; pays off from ~3 turns).
         system: [
-          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-          { type: "text", text: "The user's current financial snapshot (JSON) — reason over these exact numbers:\n" + snapshotJSON, cache_control: { type: "ephemeral" } },
+          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral", ttl: "1h" } },
+          { type: "text", text: "The user's current financial snapshot (JSON) — reason over these exact numbers:\n" + snapshotJSON, cache_control: { type: "ephemeral", ttl: "1h" } },
         ],
         messages: messages,
       }),
