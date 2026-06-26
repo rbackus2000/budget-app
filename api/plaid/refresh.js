@@ -7,7 +7,7 @@
  *  balance. Access tokens stay server-side; only derived data returns. *
  * ------------------------------------------------------------------ */
 "use strict";
-const { sendJSON, verifyUser, plaid, listItems, saveCursor } = require("./_plaid");
+const { sendJSON, verifyUser, plaid, listItems, saveCursor, PLAID_ENV } = require("./_plaid");
 
 const num = v => (typeof v === "number" && isFinite(v) ? v : 0);
 
@@ -204,6 +204,7 @@ module.exports = async function handler(req, res) {
 
   return sendJSON(res, 200, {
     connected: true,
+    env: PLAID_ENV, // "production" once the env flip is live; "sandbox" otherwise
     bank: +bankTotal.toFixed(2),
     accounts,
     cards,

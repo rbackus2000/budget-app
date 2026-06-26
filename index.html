@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Budget Planner</title>
+<link rel="icon" type="image/svg+xml" href="assets/mark.svg" />
+<link rel="apple-touch-icon" href="assets/logo.png" />
 <style>
   /* ---- LIGHT GLASS THEME (default) ---- */
   :root {
@@ -503,7 +505,9 @@
     box-shadow: var(--shadow);
   }
   .auth-card h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
-  .auth-sub { color: var(--text-dim); font-size: .9rem; margin: 8px 0 22px; }
+  /* Logo lockup framed on a soft card so its cream backdrop reads as intentional on any theme. */
+  .auth-logo { display: block; width: 100%; max-width: 280px; height: auto; margin: 0 auto 4px; border-radius: 14px; background: #fbfaf4; padding: 16px 18px; box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 6px 18px rgba(0,0,0,.12); }
+  .auth-sub { color: var(--text-dim); font-size: .9rem; margin: 14px 0 22px; text-align: center; }
   .auth-card label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); font-weight: 600; margin-bottom: 7px; }
   .auth-card input { margin-bottom: 14px; }
   .auth-btn { width: 100%; justify-content: center; }
@@ -678,6 +682,19 @@
   }
   .payday-start .ps-amt { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
+  /* Cash buffer / surplus card */
+  .surplus-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+  .surplus-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .92rem; color: var(--text); }
+  .surplus-top .ps-amt { font-weight: 800; font-variant-numeric: tabular-nums; }
+  .buf-ctl { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--text-dim); }
+  .buf-ctl .buf-sel { width: auto; padding: 6px 8px; font-size: .82rem; }
+  .surplus-note { font-size: .8rem; color: var(--text-dim); margin-top: 6px; }
+  .surplus-head { margin-top: 12px; font-weight: 700; font-size: .92rem; color: var(--text-dim); }
+  .surplus-head.pos { color: var(--green); }
+  .surplus-head.neg { color: var(--red); }
+  .surplus-step { border-top: 1px dashed var(--border); font-variant-numeric: tabular-nums; }
+  .surplus-step span:last-child { font-weight: 700; color: var(--text); }
+
   /* Plan-from (go-live) control */
   .plan-from-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
   .plan-from-row label { margin: 0; font-size: .78rem; color: var(--text-dim); font-weight: 600; }
@@ -733,7 +750,8 @@
     display: flex; flex-direction: column; padding: 18px 12px; gap: 6px; z-index: 50;
   }
   .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 14px; }
-  .brand-mark { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--card-border); box-shadow: inset 0 1px 0 rgba(255,255,255,.18); }
+  .brand-mark { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .brand-mark img { width: 28px; height: 28px; display: block; }
   .brand-name { font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em; }
   .nav-items { display: flex; flex-direction: column; gap: 3px; }
   .nav-item {
@@ -1231,7 +1249,7 @@
   <!-- SIDEBAR NAV -->
   <nav class="sidebar" id="sidebar">
     <div class="brand">
-      <div class="brand-mark"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h3"/></svg></div>
+      <div class="brand-mark"><img src="assets/mark.svg" alt="" width="24" height="24" /></div>
       <div class="brand-name">Budget Planner</div>
     </div>
     <div class="nav-items">
@@ -1566,18 +1584,18 @@
     <div class="hint">Your emergency fund target is a multiple of your monthly living expenses (Needs bills). Add goals for anything you're saving toward — enter what you've set aside and watch each fill up.</div>
   </section>
 
-  <!-- PLAN VS ACTUAL -->
+  <!-- ESTIMATE VS ACTUAL -->
   <section class="card view" data-view="plan">
-    <h2>Plan vs Actual</h2>
+    <h2>Estimate vs Actual</h2>
     <div class="summary-banner" id="summaryBanner">Add income and bills to see your comparison.</div>
     <table class="compare-table">
       <thead>
-        <tr><th>Bucket</th><th>Target</th><th>Actual</th><th>Difference</th></tr>
+        <tr><th>Bucket</th><th>Estimate</th><th id="compareActualTh">Actual</th><th>Difference</th></tr>
       </thead>
       <tbody id="compareBody"></tbody>
       <tfoot id="compareFoot"></tfoot>
     </table>
-    <div class="hint">Income here is your <b>average monthly pay</b> (biweekly checks spread evenly across the year), so months that happen to have only one paycheck don't show a false overage. Actual reflects where your money goes: <b>Needs</b> = your bills, <b>Savings</b> = the slice going to debt payoff &amp; goals, <b>Wants</b> = your fun money. If your bills push the total over your income, you'll see "over plan." Tag each bill's bucket (on the Bills tab) to control how it's counted.</div>
+    <div class="hint" id="compareHint">Estimate is your plan: your <b>average monthly pay</b> split by your budget percentages. Connect a bank (Income tab) and <b>Actual</b> becomes real measured spending from your statements — <b>Needs</b> and <b>Wants</b> from where money actually went, <b>Savings</b> = income you didn't spend. Until then, Actual reflects your bills + planned slices.</div>
   </section>
 
     </div><!-- /.views -->
@@ -1587,7 +1605,7 @@
 <!-- AUTH GATE -->
 <div class="auth-gate" id="authGate">
   <div class="auth-card">
-    <h2>Budget Planner</h2>
+    <img class="auth-logo" src="assets/logo-banner.png" alt="Budget Planner" />
     <p class="auth-sub" id="authSub">Sign in to load and sync your budget across devices.</p>
 
     <div id="authStep1">
@@ -1761,7 +1779,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, creditScore: "", creditReport: { markdown: "", date: "" } };
+  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, bufferMonths: 1, creditScore: "", creditReport: { markdown: "", date: "" } };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1798,6 +1816,7 @@ function normalizeState() {
   if (typeof state.emergencyDate !== "string") state.emergencyDate = "";
   { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 10; }
   { const v = parseFloat(state.goalsSlicePct); state.goalsSlicePct = (isFinite(v) && v >= 0 && v <= 100) ? v : 20; }
+  { const v = parseFloat(state.bufferMonths); state.bufferMonths = (isFinite(v) && v >= 0 && v <= 12) ? v : 1; }
   if (typeof state.creditScore !== "string") state.creditScore = state.creditScore == null ? "" : String(state.creditScore);
   if (!state.creditReport || typeof state.creditReport !== "object") state.creditReport = { markdown: "", date: "" };
   if (state.theme !== "light" && state.theme !== "dark") state.theme = "dark";
@@ -2122,14 +2141,15 @@ const totalIncome = () => buildSchedule().reduce((s, c) => s + (c.excluded ? 0 :
 // Average recurring monthly income: biweekly paychecks normalized across the
 // year (26 paychecks ÷ 12 months) so the count of checks landing in any single
 // calendar month doesn't skew it. Commission is variable, so it's excluded.
-// Used by Plan vs Actual to compare true monthly capacity against monthly bills.
-const avgMonthlyIncome = () => state.earners.reduce((s, e) => s + num(e.amount) * 26 / 12, 0);
+// An earner with no pay date isn't real recurring income, so it's skipped.
+// The single source of truth for "monthly capacity" across the app.
+const avgMonthlyIncome = () => state.earners.reduce((s, e) =>
+  s + (num(e.amount) > 0 && e.firstPay ? num(e.amount) * 26 / 12 : 0), 0);
 
 // Year-month key for a date, e.g. "2026-06".
 function ymKey(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
 // Full date key, e.g. "2026-06-15".
 function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
-function billPaidOn(b, date) { return !!(b.paid && b.paid[ymKey(date)]); }
 
 // Per-paycheck exclusion: a check the user has unticked (e.g. one already
 // reflected in the starting balance) is left out of income and the plan.
@@ -2232,6 +2252,70 @@ function monthlyLivingExpenses() {
   return state.bills.reduce((s, b) => s + (b.bucket === "needs" ? monthlyPayment(b) : 0), 0);
 }
 const emergencyTarget = () => monthlyLivingExpenses() * (num(state.emergencyMonths) || 3);
+
+/* ------------------- ESTIMATE vs ACTUAL (bank feed) ----------------- *
+ *  When a bank is connected, "Actual" is measured spend from Plaid —    *
+ *  not a restatement of the plan. Each Plaid spending category maps to  *
+ *  a budget bucket; whatever income wasn't spent is what you saved.     *
+ * ------------------------------------------------------------------- */
+const PFC_BUCKET = {
+  RENT_AND_UTILITIES: "needs", FOOD_AND_DRINK: "needs", TRANSPORTATION: "needs",
+  MEDICAL: "needs", PERSONAL_CARE: "needs", GENERAL_SERVICES: "needs",
+  LOAN_PAYMENTS: "needs", HOME_IMPROVEMENT: "needs", GOVERNMENT_AND_NON_PROFIT: "needs",
+  ENTERTAINMENT: "wants", GENERAL_MERCHANDISE: "wants", TRAVEL: "wants",
+  // INCOME / TRANSFER_IN / TRANSFER_OUT / BANK_FEES aren't real spending — excluded.
+};
+
+// Measured monthly spend split into buckets from the bank feed, plus what was
+// left over (income minus spend = saved / accumulating). Null without Plaid.
+function actualSpendBuckets() {
+  const sp = state.plaidSpending;
+  if (!sp || !Array.isArray(sp.byCategory) || !sp.byCategory.length) return null;
+  const months = Math.max(1, num(sp.months) || 3);
+  const out = { needs: 0, wants: 0 };
+  sp.byCategory.forEach(c => {
+    const bkt = PFC_BUCKET[c.category];
+    if (!bkt) return;
+    out[bkt] += num(c.monthly != null ? c.monthly : (c.amount || 0) / months);
+  });
+  const income = (state.plaidIncome && num(state.plaidIncome.monthly)) || avgMonthlyIncome();
+  out.totalSpend = out.needs + out.wants;
+  out.savings = Math.max(0, income - out.totalSpend); // unspent = saved/accumulated
+  out.income = income;
+  return out;
+}
+
+/* ----------------------- CASH BUFFER / SURPLUS ---------------------- *
+ *  How much cash to keep in checking as a float (default: one month of  *
+ *  bills). Anything above that is idle — better deployed to emergency,  *
+ *  priority debt, then goals. This answers "should I carry $27k?".      *
+ * ------------------------------------------------------------------- */
+function recommendedBuffer() {
+  const months = num(state.bufferMonths) >= 0 ? num(state.bufferMonths) : 1;
+  return totalMonthlyPayments() * months;
+}
+const cashSurplus = () => num(state.bank) - recommendedBuffer();
+
+// Suggested deployment of any idle cash above the buffer, in priority order:
+// fill the emergency fund, then lump-sum the top-priority debt, then goals.
+function surplusPlan() {
+  const bank = num(state.bank);
+  const buffer = recommendedBuffer();
+  const surplus = bank - buffer;
+  const steps = [];
+  if (surplus > 50) {
+    let pool = surplus;
+    const emGap = Math.max(0, emergencyTarget() - num(state.emergencySaved));
+    if (emGap > 0 && pool > 0) { const a = Math.min(pool, emGap); steps.push({ label: "Top up emergency fund", amount: a }); pool -= a; }
+    const debts = state.bills.filter(b => isExtraPayoff(b) && currentBalance(b) > 0);
+    debts.sort((a, b) => state.payoffMethod === "snowball"
+      ? currentBalance(a) - currentBalance(b)
+      : (num(b.apr) - num(a.apr)) || (currentBalance(a) - currentBalance(b)));
+    if (debts.length && pool > 0) { const d = debts[0]; const a = Math.min(pool, currentBalance(d)); steps.push({ label: "Lump sum to " + (d.name || "your top debt"), amount: a }); pool -= a; }
+    if (pool > 0) steps.push({ label: "Move to goals / high-yield savings", amount: pool });
+  }
+  return { bank, buffer, surplus, steps };
+}
 
 // Rows whose payment panel is currently expanded (in-memory only, not persisted).
 const expanded = new Set();
@@ -3142,13 +3226,16 @@ function renderBank() {
 }
 
 function renderCompare() {
-  // Compare monthly bills against AVERAGE monthly income, not the literal checks
-  // that happen to fall in the viewed month — otherwise a 1-paycheck month reads
-  // as a huge overage even when finances are fine across the year.
-  const income = avgMonthlyIncome();
+  // "Estimate" is the plan; "Actual" is measured spend from the bank feed when
+  // a bank is connected, otherwise a restatement of bills + planned slices.
+  // Income is AVERAGE monthly pay (or measured income when from the bank) so a
+  // 1-paycheck month doesn't read as a huge overage.
+  const bankActual = actualSpendBuckets();
+  const fromBank = !!bankActual;
+  const income = fromBank ? bankActual.income : avgMonthlyIncome();
   const plan = activePlan();
 
-  // Target dollars per bucket (sum plan categories mapping to each bucket).
+  // Estimate (target) dollars per bucket (sum plan categories mapping to each).
   const target = { needs: 0, wants: 0, savings: 0 };
   const catNames = { needs: [], wants: [], savings: [] };
   plan.categories.forEach(c => {
@@ -3156,20 +3243,30 @@ function renderCompare() {
     catNames[c.bucket].push(c.name + " " + c.pct + "%");
   });
 
-  // Actual = where money actually goes. Bills count under their tagged bucket
-  // (Needs = rent, minimums, etc.). Then add the plan's real deployment of the
-  // rest of your income: the Savings slice → debt payoff + goals, the Wants
-  // slice → fun money. So all three buckets reflect actual allocation, not just
-  // bills. If bills push the total over your income, you'll read as "over plan".
-  const actual = { needs: 0, wants: 0, savings: 0 };
+  // Actual.
+  let actual = { needs: 0, wants: 0, savings: 0 };
   let unassigned = 0;
-  state.bills.forEach(b => {
-    if (Object.prototype.hasOwnProperty.call(actual, b.bucket)) actual[b.bucket] += monthlyPayment(b);
-    else unassigned += monthlyPayment(b);
-  });
-  const pcts = planBucketPercents();
-  actual.savings += income * pcts.savings / 100; // your savings slice → debt payoff + goals
-  actual.wants += income * pcts.wants / 100;     // your wants slice → fun money
+  if (fromBank) {
+    // Real measured spend from statements: Needs/Wants categorized, Savings =
+    // income you didn't spend (what's actually accumulating).
+    actual.needs = bankActual.needs;
+    actual.wants = bankActual.wants;
+    actual.savings = bankActual.savings;
+  } else {
+    // No bank yet: bills under their tagged bucket, plus the plan's deployment
+    // of the rest of income (Savings slice → debt+goals, Wants slice → fun).
+    state.bills.forEach(b => {
+      if (Object.prototype.hasOwnProperty.call(actual, b.bucket)) actual[b.bucket] += monthlyPayment(b);
+      else unassigned += monthlyPayment(b);
+    });
+    const pcts = planBucketPercents();
+    actual.savings += income * pcts.savings / 100;
+    actual.wants += income * pcts.wants / 100;
+  }
+
+  // Header + hint reflect where "Actual" comes from.
+  const actualTh = document.getElementById("compareActualTh");
+  if (actualTh) actualTh.textContent = fromBank ? "Actual (from bank)" : "Actual (planned)";
 
   const body = document.getElementById("compareBody");
   clear(body);
@@ -3177,17 +3274,21 @@ function renderCompare() {
 
   BUCKETS.forEach(bk => {
     const t = target[bk.id], a = actual[bk.id], diff = Math.abs(t - a);
-    const under = a <= t;
+    // For Needs/Wants, spending UNDER budget is good; for Savings, beating the
+    // target (saving MORE) is good — so the coloring and wording flip.
+    const higherBetter = bk.id === "savings";
+    const good = higherBetter ? a >= t : a <= t;
+    const word = higherBetter ? (a >= t ? " ahead" : " short") : (a <= t ? " left" : " over");
     const nameCell = el("td", null, [
       el("span", { class: "bucket-name", text: bk.label }),
       el("span", { class: "bucket-cats", text: catNames[bk.id].join(" · ") || "—" }),
-      barNode(a, t, maxVal),
+      barNode(a, t, maxVal, higherBetter),
     ]);
     body.appendChild(el("tr", { class: "crow" }, [
       nameCell,
       el("td", { text: fmt(t) }),
       el("td", { text: fmt(a) }),
-      el("td", { class: "diff " + (under ? "pos" : "neg"), text: fmt(diff) + (under ? " left" : " over") }),
+      el("td", { class: "diff " + (good ? "pos" : "neg"), text: fmt(diff) + word }),
     ]));
   });
 
@@ -3203,36 +3304,60 @@ function renderCompare() {
     ]));
   }
 
-  // Footer totals
-  const totalTarget = income; // 100% allocated
-  const totalActual = actual.needs + actual.wants + actual.savings + unassigned;
+  // Footer totals. From the bank, Savings = income − spend, so the grand total
+  // always equals income; the meaningful comparison is SPEND vs budgeted spend
+  // (Needs + Wants). Without a bank, compare the full allocation against income.
   const foot = document.getElementById("compareFoot");
   clear(foot);
-  foot.appendChild(el("tr", null, [
-    el("td", { text: "Total" }),
-    el("td", { text: fmt(totalTarget) }),
-    el("td", { text: fmt(totalActual) }),
-    el("td", { class: "diff " + (totalActual <= totalTarget ? "pos" : "neg"), text: fmt(Math.abs(totalTarget - totalActual)) }),
-  ]));
+  if (fromBank) {
+    const budgetSpend = target.needs + target.wants;
+    const actualSpend = actual.needs + actual.wants;
+    foot.appendChild(el("tr", null, [
+      el("td", { text: "Total spent" }),
+      el("td", { text: fmt(budgetSpend) }),
+      el("td", { text: fmt(actualSpend) }),
+      el("td", { class: "diff " + (actualSpend <= budgetSpend ? "pos" : "neg"), text: fmt(Math.abs(budgetSpend - actualSpend)) + (actualSpend <= budgetSpend ? " under" : " over") }),
+    ]));
+  } else {
+    const totalTarget = income, totalActual = actual.needs + actual.wants + actual.savings + unassigned;
+    foot.appendChild(el("tr", null, [
+      el("td", { text: "Total" }),
+      el("td", { text: fmt(totalTarget) }),
+      el("td", { text: fmt(totalActual) }),
+      el("td", { class: "diff " + (totalActual <= totalTarget ? "pos" : "neg"), text: fmt(Math.abs(totalTarget - totalActual)) }),
+    ]));
+  }
 
-  // Summary banner
+  // Summary banner.
   const banner = document.getElementById("summaryBanner");
-  if (income <= 0 && totalActual <= 0) {
+  if (income <= 0) {
     banner.className = "summary-banner";
     banner.textContent = "Add income and bills to see your comparison.";
-  } else if (totalActual <= totalTarget) {
-    banner.className = "summary-banner under";
-    banner.textContent = "You're " + fmt(totalTarget - totalActual) + " under plan — room to save or spend.";
+  } else if (fromBank) {
+    const saveDiff = actual.savings - target.savings; // + = saving more than planned
+    if (saveDiff >= 0) {
+      banner.className = "summary-banner under";
+      banner.textContent = "You actually saved ~" + fmt(actual.savings) + "/mo — " + fmt(saveDiff) + " ahead of your " + fmt(target.savings) + " plan. Idle cash above your buffer can go to work (see the Payday Plan).";
+    } else {
+      banner.className = "summary-banner over";
+      banner.textContent = "You saved ~" + fmt(actual.savings) + "/mo — " + fmt(-saveDiff) + " short of your " + fmt(target.savings) + " plan. Trim the over-budget bucket above.";
+    }
   } else {
-    banner.className = "summary-banner over";
-    banner.textContent = "You're " + fmt(totalActual - totalTarget) + " over plan — committed more than you earn.";
+    const totalActual = actual.needs + actual.wants + actual.savings + unassigned;
+    if (totalActual <= income) {
+      banner.className = "summary-banner under";
+      banner.textContent = "You're " + fmt(income - totalActual) + " under plan — room to save or spend.";
+    } else {
+      banner.className = "summary-banner over";
+      banner.textContent = "You're " + fmt(totalActual - income) + " over plan — committed more than you earn.";
+    }
   }
 }
 
-function barNode(actual, target, max) {
+function barNode(actual, target, max, higherBetter) {
   const aw = Math.min(100, (actual / max) * 100);
-  const over = actual > target && target > 0;
-  const fill = el("span", { style: { width: aw + "%", background: over ? "var(--red)" : "var(--green)" } });
+  const bad = target > 0 && (higherBetter ? actual < target : actual > target);
+  const fill = el("span", { style: { width: aw + "%", background: bad ? "var(--red)" : "var(--green)" } });
   return el("div", { class: "bar" }, [fill]);
 }
 
@@ -3281,6 +3406,34 @@ function renderPaydayPlan() {
     }
     banner.textContent = msg;
   }
+
+  // Cash buffer / surplus — answers "should I be carrying all this in checking?"
+  // Keep one (configurable) month of bills as a float; deploy the rest.
+  const sp = surplusPlan();
+  const surplusCard = el("div", { class: "surplus-card" });
+  const bufSel = el("select", { class: "buf-sel", on: { change: e => {
+    state.bufferMonths = parseFloat(e.target.value); save(); renderPaydayPlan(); renderCompare(); renderHome();
+  } } });
+  [0.5, 1, 1.5, 2, 3].forEach(m => bufSel.appendChild(el("option", {
+    props: { value: String(m), selected: num(state.bufferMonths) === m },
+    text: (m === 1 ? "1 month" : m + " months") + " of bills",
+  })));
+  surplusCard.appendChild(el("div", { class: "surplus-top" }, [
+    el("div", null, [el("span", { text: "Cash on hand " }), el("b", { class: "ps-amt", text: fmt(sp.bank) })]),
+    el("div", { class: "buf-ctl" }, [el("span", { text: "Keep buffer:" }), bufSel]),
+  ]));
+  surplusCard.appendChild(el("div", { class: "surplus-note", text: "Recommended float to leave in checking: " + fmt(sp.buffer) + " (" + (num(state.bufferMonths) === 1 ? "1 month" : num(state.bufferMonths) + " months") + " of bills)." }));
+  if (sp.surplus > 50) {
+    surplusCard.appendChild(el("div", { class: "surplus-head pos", text: "💰 " + fmt(sp.surplus) + " is sitting idle above your buffer — put it to work:" }));
+    sp.steps.forEach(s => surplusCard.appendChild(el("div", { class: "payday-row surplus-step" }, [
+      el("span", { text: s.label }), el("span", { text: fmt(s.amount) }),
+    ])));
+  } else if (sp.surplus < -50) {
+    surplusCard.appendChild(el("div", { class: "surplus-head neg", text: "You're " + fmt(-sp.surplus) + " below a healthy buffer — leave more in checking before deploying cash." }));
+  } else {
+    surplusCard.appendChild(el("div", { class: "surplus-head", text: "Right-sized — little idle cash to redeploy." }));
+  }
+  wrap.appendChild(surplusCard);
 
   // Starting balance + a note about the window the plan projects across.
   wrap.appendChild(el("div", { class: "payday-start" }, [
@@ -4325,6 +4478,7 @@ function plaidApply(d) {
   state.plaidRecurringBills = d.recurringBills || null; // recurring outflow = AT&T etc.
   state.plaidVariable = d.variableSpending || null;     // one-off spending = Walmart etc.
   state.plaidRecent = (d.transactions || []).slice(0, 50);
+  state.plaidEnv = d.env || state.plaidEnv || null; // "production" once live, else "sandbox"
   state.plaidSyncedAt = d.syncedAt || new Date().toISOString();
 
   normalizeState();
@@ -4380,6 +4534,9 @@ function plaidRenderSpending() {
   const ess = realMonthlyEssentials();
   if (ess > 0) line("Living expenses:", "≈ $" + Math.round(ess) + "/mo (drives emergency target)");
   if (!host.childNodes.length) line("Bank feed:", "synced — categorizing income vs bills vs spending on next refresh.");
+  // Make the live environment obvious — a sandbox sync isn't your real money.
+  if (state.plaidEnv && state.plaidEnv !== "production")
+    line("⚠ Environment:", state.plaidEnv + " (test data — not your real bank). Flip PLAID_ENV to production.");
 }
 
 // Run async fn over items with a small concurrency cap (don't hammer the API).
@@ -5218,14 +5375,8 @@ function affCardPayments() {
   return state.bills.reduce((s, b) => s + (b.type === "Credit Card Debt" ? monthlyPayment(b) : 0), 0);
 }
 
-// Recurring NET monthly income from regular biweekly paychecks, excluding the
-// variable commission.
-function affNetMonthlyIncome() {
-  return state.earners.reduce((s, e) => {
-    const amt = num(e.amount);
-    return s + (amt > 0 && e.firstPay ? amt * (26 / 12) : 0);
-  }, 0);
-}
+// Recurring NET monthly income — same figure the rest of the app uses.
+const affNetMonthlyIncome = avgMonthlyIncome;
 // Existing monthly debt obligations lenders weigh: credit cards + loans.
 function affDebtObligations() {
   return state.bills.reduce((s, b) =>
