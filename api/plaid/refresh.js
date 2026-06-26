@@ -105,35 +105,47 @@ function spendingSummary(txns) {
   return { total: +total.toFixed(2), monthly: +(total / m).toFixed(2), months: m, count, byCategory };
 }
 
-// Sum of currently-pending OUTFLOWS per account, from a short recent window via
-// /transactions/get (which returns the full window every call, unlike the
-// incremental /transactions/sync). Lets us estimate `available` when a bank
-// (e.g. Capital One) returns it as null: available ≈ current − pending holds.
-async function pendingOutflowByAccount(accessToken) {
-  const out = {};
+// Pull the FULL transaction window via /transactions/get (paginated). Unlike the
+// incremental /transactions/sync — which only returns changes since a saved
+// cursor, so a re-sync sees almost nothing — this returns every transaction in
+// the window on every call. That makes the spending summary, the transaction
+// feed, and the pending-balance estimate reliable on repeat syncs. Tolerates a
+// freshly linked item whose transactions are still initializing.
+async function getTransactions(accessToken, days) {
+  const end = new Date();
+  const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
+  const ymd = d => d.toISOString().slice(0, 10);
+  const all = [];
   try {
-    const end = new Date();
-    const start = new Date(end.getTime() - 14 * 24 * 3600 * 1000);
-    const ymd = d => d.toISOString().slice(0, 10);
-    const r = await plaid("/transactions/get", {
-      access_token: accessToken,
-      start_date: ymd(start), end_date: ymd(end),
-      options: { count: 500, offset: 0 },
-    });
-    const txns = r.transactions || [];
-    const pend = txns.filter(t => t.pending);
-    // Diagnostic: is Capital One sending pending txns, or is this endpoint empty?
-    console.log("pending probe: total_transactions=" + (r.total_transactions != null ? r.total_transactions : "?") +
-      " returned=" + txns.length + " pending=" + pend.length +
-      (pend.length ? " sample=" + JSON.stringify(pend.slice(0, 3).map(t => ({ amt: t.amount, name: t.merchant_name || t.name, date: t.date }))) : ""));
-    txns.forEach(t => {
-      if (!t.pending) return;
-      const amt = num(t.amount); // Plaid: positive = money out (a hold)
-      if (amt > 0) out[t.account_id] = (out[t.account_id] || 0) + amt;
-    });
+    let offset = 0;
+    for (let page = 0; page < 12; page++) { // safety cap: 12 × 500 = 6000 txns
+      const r = await plaid("/transactions/get", {
+        access_token: accessToken,
+        start_date: ymd(start), end_date: ymd(end),
+        options: { count: 500, offset: offset },
+      });
+      const batch = r.transactions || [];
+      batch.forEach(t => all.push(t));
+      offset += batch.length;
+      const total = r.total_transactions != null ? r.total_transactions : all.length;
+      if (!batch.length || offset >= total) break;
+    }
   } catch (e) {
-    console.error("pending probe failed:", (e && e.plaid && e.plaid.error_code) || (e && e.message));
+    const code = e && e.plaid && e.plaid.error_code;
+    if (code !== "PRODUCT_NOT_READY") throw e; // still initializing right after link — tolerate
   }
+  return all;
+}
+
+// Sum of currently-pending OUTFLOWS per account (a hold reduces spendable cash).
+// Used to estimate `available` when a bank returns it as null.
+function pendingOutflowByAccount(txns) {
+  const out = {};
+  txns.forEach(t => {
+    if (!t.pending) return;
+    const amt = num(t.amount); // Plaid: positive = money out
+    if (amt > 0) out[t.account_id] = (out[t.account_id] || 0) + amt;
+  });
   return out;
 }
 
@@ -179,9 +191,11 @@ module.exports = async function handler(req, res) {
         } else { throw le; }
       }
 
-      // When the bank reports no `available` (Capital One does this), estimate
-      // the spendable balance as current minus pending holds.
-      const pendingAcct = await pendingOutflowByAccount(it.accessToken);
+      // Pull the full transaction window up front (reliable on every sync), then
+      // derive pending holds per account from it to estimate `available` when the
+      // bank reports none (Capital One does this).
+      const itemTxns = await getTransactions(it.accessToken, 120);
+      const pendingAcct = pendingOutflowByAccount(itemTxns);
 
       accountsRaw.forEach(a => {
         const bal = a.balances || {};
@@ -192,6 +206,7 @@ module.exports = async function handler(req, res) {
           if (pend != null && pend >= 0.01) { available = +(num(bal.current) - pend).toFixed(2); availableEstimated = true; }
         }
         accounts.push({
+          accountId: a.account_id,
           name: a.name, mask: a.mask, type: a.type, subtype: a.subtype,
           balance: num(bal.current), available: available, availableEstimated: availableEstimated,
           limit: bal.limit == null ? null : num(bal.limit),
@@ -218,10 +233,8 @@ module.exports = async function handler(req, res) {
         }
       });
 
-      // Transactions (spending). Persist the new cursor so next sync is incremental.
-      const { added, cursor } = await syncTransactions(it.accessToken, it.cursor);
-      allTxns = allTxns.concat(added);
-      if (cursor && cursor !== it.cursor) { try { await saveCursor(user.id, it.itemId, cursor); } catch (e) {} }
+      // Full transaction window (pulled above) drives spending + the feed.
+      allTxns = allTxns.concat(itemTxns);
 
       // Classify recurring streams: inflow = income (jobs), outflow = bills.
       const rec = await getRecurring(it.accessToken);
@@ -247,13 +260,19 @@ module.exports = async function handler(req, res) {
     .filter(a => a.type === "depository")
     .reduce((s, a) => s + (a.available != null ? a.available : a.balance), 0);
 
-  const recent = allTxns
-    .filter(t => !t.pending)
+  // Full transaction feed (posted + pending), newest first, labelled with the
+  // owning account. This is what the app lists so everything is auto-filled.
+  const acctLabel = {};
+  accounts.forEach(a => { acctLabel[a.accountId] = (a.name || a.subtype || "Account") + (a.mask ? " ••" + a.mask : ""); });
+  const feed = allTxns
+    .slice()
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .slice(0, 50)
+    .slice(0, 300)
     .map(t => ({
       date: t.date, name: t.merchant_name || t.name, amount: num(t.amount),
       category: (t.personal_finance_category && t.personal_finance_category.primary) || null,
+      pending: !!t.pending,
+      account: acctLabel[t.account_id] || null,
     }));
 
   // "Other spending" = outflow that isn't a recurring bill (Walmart one-offs).
@@ -271,7 +290,7 @@ module.exports = async function handler(req, res) {
     recurringBills: { monthly: sumMonthly(recurringBills), streams: recurringBills },
     variableSpending: spendingSummary(variableTxns), // Walmart-type one-offs
     spending: spendingSummary(allTxns),              // total outflow (drives living expenses)
-    transactions: recent,
+    transactions: feed,
     syncedAt: new Date().toISOString(),
     itemErrors: itemErrors.length ? itemErrors : undefined,
   });

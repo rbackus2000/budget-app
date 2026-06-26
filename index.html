@@ -695,6 +695,23 @@
   .surplus-step { border-top: 1px dashed var(--border); font-variant-numeric: tabular-nums; }
   .surplus-step span:last-child { font-weight: 700; color: var(--text); }
 
+  /* Bank transaction feed */
+  .txn-head { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 6px; }
+  .txn-title { font-weight: 700; font-size: .95rem; color: var(--text); }
+  .txn-count { font-size: .75rem; color: var(--text-dim); }
+  .txn-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+  .txn-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--border); }
+  .txn-row:first-child { border-top: none; }
+  .txn-row.is-pending { opacity: .8; }
+  .txn-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .txn-name { font-size: .88rem; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+  .txn-meta { font-size: .72rem; color: var(--text-dim); }
+  .txn-right { display: flex; align-items: center; gap: 8px; flex: none; }
+  .txn-amt { font-variant-numeric: tabular-nums; font-weight: 700; font-size: .9rem; }
+  .txn-amt.neg { color: var(--text); }
+  .txn-amt.pos { color: var(--green); }
+  .txn-pending { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); border: 1px solid var(--card-border); border-radius: 6px; padding: 1px 5px; }
+
   /* Plan-from (go-live) control */
   .plan-from-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
   .plan-from-row label { margin: 0; font-size: .78rem; color: var(--text-dim); font-weight: 600; }
@@ -1448,6 +1465,7 @@
     </div>
     <div id="plaidStatus" class="hint" style="margin-top:6px">Connect your bank to pull real balances, credit-card APR/limit/due dates, and spending automatically. Bank-level encryption; your login is never seen by this app.</div>
     <div id="plaidSpending" class="hint" style="margin-top:6px"></div>
+    <div id="plaidTxns"></div>
   </section>
 
   <!-- PLAN SELECTOR + CATEGORIES -->
@@ -4509,7 +4527,7 @@ function plaidApply(d) {
   if (d.recurringBills && (d.recurringBills.streams || []).length) state.plaidRecurringBills = d.recurringBills;
   if (d.variableSpending && ((d.variableSpending.byCategory || []).length || num(d.variableSpending.total)))
     state.plaidVariable = d.variableSpending;
-  if ((d.transactions || []).length) state.plaidRecent = d.transactions.slice(0, 50);
+  if ((d.transactions || []).length) state.plaidRecent = d.transactions; // full feed (server caps at 300)
   state.plaidEnv = d.env || state.plaidEnv || null; // "production" once live, else "sandbox"
   state.plaidSyncedAt = d.syncedAt || new Date().toISOString();
 
@@ -4529,6 +4547,41 @@ function plaidRefreshUI() {
     connect.textContent = "🔗 Connect another bank";
   }
   plaidRenderSpending();
+  plaidRenderTxns();
+}
+
+// Full transaction feed pulled from the bank — everything auto-filled, newest
+// first, with pending charges flagged. Money out shows red, money in green.
+function plaidRenderTxns() {
+  const host = document.getElementById("plaidTxns");
+  if (!host) return;
+  clear(host);
+  const txns = state.plaidRecent || [];
+  if (!txns.length) return;
+
+  host.appendChild(el("div", { class: "txn-head" }, [
+    el("span", { class: "txn-title", text: "Transactions" }),
+    el("span", { class: "txn-count", text: txns.length + " pulled · newest first" }),
+  ]));
+
+  const list = el("div", { class: "txn-list" });
+  txns.forEach(t => {
+    // Not num() here: the global num() clamps negatives to 0, which would zero
+    // out income/refunds (Plaid sends inflows as negative amounts).
+    const amt = Number(t.amount) || 0;    // Plaid: positive = money out, negative = in
+    const out = amt > 0;
+    const when = (function () { const d = parseDate(t.date); return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : (t.date || ""); })();
+    const left = el("div", { class: "txn-left" }, [
+      el("span", { class: "txn-name", text: t.name || "Transaction" }),
+      el("span", { class: "txn-meta", text: when + (t.category ? " · " + prettyCat(t.category) : "") + (t.account ? " · " + t.account : "") }),
+    ]);
+    const right = el("div", { class: "txn-right" }, [
+      el("span", { class: "txn-amt " + (out ? "neg" : "pos"), text: (out ? "−" : "+") + fmt(Math.abs(amt)) }),
+    ]);
+    if (t.pending) right.insertBefore(el("span", { class: "txn-pending", text: "pending" }), right.firstChild);
+    list.appendChild(el("div", { class: "txn-row" + (t.pending ? " is-pending" : "") }, [left, right]));
+  });
+  host.appendChild(list);
 }
 
 // PFC primary code → readable label.
