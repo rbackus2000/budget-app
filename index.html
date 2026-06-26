@@ -493,34 +493,55 @@
   .sync-status.error { color: var(--red); }
 
   /* Auth gate */
+  /* ---------------- SIGN-IN (BulgaAi brand) ---------------- */
   .auth-gate {
+    --au-navy:#1b2a4d; --au-navy-2:#24365f; --au-cyan:#34c5e8; --au-ink:#1b2540;
+    --au-muted:#6b7689; --au-line:#e4e8f0; --au-field:#f5f7fb; --au-card:#ffffff;
     position: fixed; inset: 0; z-index: 200;
-    background: var(--bg);
-    display: flex; align-items: center; justify-content: center;
-    padding: 24px;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    overflow-y: auto;
+    background:
+      radial-gradient(1100px circle at 50% -10%, #e8f6fb 0%, transparent 55%),
+      radial-gradient(820px circle at 90% 112%, #e6ecf7 0%, transparent 50%),
+      linear-gradient(160deg, #f8fafc 0%, #eef2f8 100%);
   }
   .auth-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 16px; padding: 32px 28px; width: 100%; max-width: 400px;
-    box-shadow: var(--shadow);
+    position: relative; background: var(--au-card);
+    border: 1px solid var(--au-line); border-radius: 22px;
+    padding: 40px 34px 28px; width: 100%; max-width: 412px;
+    box-shadow: 0 1px 1px rgba(20,35,70,.04), 0 20px 54px rgba(20,40,80,.13);
+    animation: authIn .32s cubic-bezier(.2,.7,.3,1);
   }
-  .auth-card h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
-  /* Logo lockup framed on a soft card so its cream backdrop reads as intentional on any theme. */
-  .auth-logo { display: block; width: 100%; max-width: 280px; height: auto; margin: 0 auto 4px; border-radius: 14px; background: #fbfaf4; padding: 16px 18px; box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 6px 18px rgba(0,0,0,.12); }
-  .auth-sub { color: var(--text-dim); font-size: .9rem; margin: 14px 0 22px; text-align: center; }
-  .auth-card label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-dim); font-weight: 600; margin-bottom: 7px; }
-  .auth-card input { margin-bottom: 14px; }
-  .auth-btn { width: 100%; justify-content: center; }
-  .auth-link {
-    background: none; border: none; color: var(--accent); cursor: pointer;
-    font-size: .82rem; font-family: inherit; margin-top: 12px; padding: 4px;
+  @keyframes authIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .auth-card::before { content: ""; position: absolute; left: 26px; right: 26px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: linear-gradient(90deg, var(--au-navy), var(--au-cyan)); }
+  .auth-logo { display: block; width: auto; height: 60px; max-width: 84%; margin: 4px auto 22px; }
+  .auth-head { text-align: center; font-size: 1.5rem; font-weight: 800; letter-spacing: -.025em; color: var(--au-ink); }
+  .auth-sub { color: var(--au-muted); font-size: .92rem; margin: 6px 0 26px; text-align: center; line-height: 1.5; }
+  .auth-card label { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--au-muted); font-weight: 700; margin-bottom: 7px; }
+  .auth-card input {
+    width: 100%; background: var(--au-field); border: 1.5px solid var(--au-line);
+    border-radius: 12px; padding: 13px 14px; font-size: 16px; color: var(--au-ink);
+    font-family: inherit; transition: border-color .15s, box-shadow .15s, background .15s; margin-bottom: 16px;
   }
-  .auth-link:hover { text-decoration: underline; }
-  .auth-err { color: var(--red); font-size: .82rem; margin-top: 12px; min-height: 0; }
+  .auth-card input::placeholder { color: #9aa4b5; }
+  .auth-card input:focus { outline: none; background: #fff; border-color: var(--au-cyan); box-shadow: 0 0 0 4px rgba(52,197,232,.16); }
+  .auth-pw { position: relative; }
+  .auth-pw input { padding-right: 66px; }
+  .auth-pw-toggle { position: absolute; right: 6px; top: 6px; height: 40px; padding: 0 12px; border: none; background: transparent; color: var(--au-muted); font: 700 .76rem inherit; cursor: pointer; border-radius: 9px; }
+  .auth-pw-toggle:hover { color: var(--au-navy); background: rgba(27,42,77,.05); }
+  .auth-btn {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, var(--au-navy) 0%, var(--au-navy-2) 55%, #2c6e9f 100%);
+    color: #fff; border: none; border-radius: 12px; padding: 14px 18px; font: 700 1rem inherit;
+    cursor: pointer; margin-top: 4px; box-shadow: 0 8px 20px rgba(27,42,77,.22); transition: filter .15s, transform .05s;
+  }
+  .auth-btn:hover { filter: brightness(1.09); }
+  .auth-btn:active { transform: translateY(1px); }
+  .auth-btn:disabled { opacity: .65; cursor: progress; }
+  .auth-err { color: #d2453b; font-size: .85rem; margin-top: 14px; text-align: center; font-weight: 600; }
   .auth-err:empty { display: none; }
-  .auth-check { font-size: .92rem; color: var(--text); line-height: 1.55; margin-bottom: 16px; }
-  .auth-foot { color: var(--text-dim); font-size: .72rem; margin-top: 20px; text-align: center; }
-  .auth-btn:disabled { opacity: .6; cursor: progress; }
+  .auth-foot { color: var(--au-muted); font-size: .74rem; margin-top: 22px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .auth-foot svg { width: 13px; height: 13px; flex-shrink: 0; opacity: .7; }
 
   /* Bucket legend */
   .legend { margin-top: 18px; display: grid; gap: 8px; }
@@ -1757,19 +1778,23 @@
 <!-- AUTH GATE -->
 <div class="auth-gate" id="authGate">
   <div class="auth-card">
-    <img class="auth-logo" src="assets/logo-banner.png" alt="Budget Planner" />
-    <p class="auth-sub" id="authSub">Sign in to load and sync your budget across devices.</p>
+    <img class="auth-logo" src="assets/New_BulgaAi_logo_Transparent.png" alt="BulgaAi" />
+    <h1 class="auth-head">Welcome back</h1>
+    <p class="auth-sub" id="authSub">Sign in to your BulgaAi budget.</p>
 
     <div id="authStep1">
       <label for="authEmail">Email</label>
-      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" />
+      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" inputmode="email" />
       <label for="authPassword">Password</label>
-      <input type="password" id="authPassword" placeholder="Your password" autocomplete="current-password" />
-      <button class="btn-primary auth-btn" id="authSignIn">Sign in</button>
+      <div class="auth-pw">
+        <input type="password" id="authPassword" placeholder="Your password" autocomplete="current-password" />
+        <button type="button" class="auth-pw-toggle" id="authPwToggle" aria-label="Show password">Show</button>
+      </div>
+      <button class="auth-btn" id="authSignIn">Sign in</button>
     </div>
 
     <div class="auth-err" id="authErr"></div>
-    <div class="auth-foot">Your data is private to your account and stored securely.</div>
+    <div class="auth-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Private &amp; encrypted — your data stays yours.</div>
   </div>
 </div>
 
@@ -6543,6 +6568,15 @@ function init() {
   document.getElementById("authEmail").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("authPassword").focus(); });
   document.getElementById("signOutBtn").addEventListener("click", () => sb.auth.signOut());
   const cpBtn = document.getElementById("changePwBtn"); if (cpBtn) cpBtn.addEventListener("click", changePassword);
+  const pwToggle = document.getElementById("authPwToggle");
+  if (pwToggle) pwToggle.addEventListener("click", () => {
+    const inp = document.getElementById("authPassword");
+    const show = inp.type === "password";
+    inp.type = show ? "text" : "password";
+    pwToggle.textContent = show ? "Hide" : "Show";
+    pwToggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    inp.focus();
+  });
 
   // Sidebar navigation
   document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => showView(b.getAttribute("data-nav"))));
