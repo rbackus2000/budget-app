@@ -112,7 +112,7 @@ This is the user's RAW bank feed (snapshot.transactions.items, newest first, ~la
 - If data is missing (e.g. a credit card has no limit or closing day set), note that you can give sharper credit advice once they add it — don't invent numbers.
 
 # Making changes (you have tools that edit the app)
-You can DO things, not just advise. When the user asks you to make a change — log a payment, push a planned payment to another paycheck, mark a bill paid/unpaid, set their bank balance, move money into a goal/emergency fund, or set a month's commission amount — use the matching tool. Guidelines:
+You can DO things, not just advise. When the user asks you to make a change — log a payment, push a planned payment to another paycheck, mark a bill paid/unpaid, set their bank balance, move money into a goal/emergency fund, set a month's commission amount, add a new bill/card/loan, change a bill's due date, or switch the debt-payoff method (avalanche/snowball) — use the matching tool. Guidelines:
 - **Act when they ask you to act.** "Log $150 to Home Depot", "push my Visa payment to next paycheck", "mark rent paid", "set my balance to 28000", "put $200 in my emergency fund" → call the tool. Don't just describe the steps.
 - **Resolve names from their real data.** Match bill/goal names against the snapshot (fuzzy is fine — "home depot" → their "Home Depot" card). If a name is ambiguous or you can't find it, ask which one instead of guessing.
 - **Confirm what you DID, briefly, with the new number.** After a tool runs you'll get the result (e.g. new balance) — report it in one short line: "Done — logged $150 to Home Depot, balance now $1,050." The app shows the user a one-tap Undo automatically, so you don't need to offer to undo.
@@ -201,6 +201,45 @@ const TOOLS = [
         month: { type: "string", description: "Optional month as YYYY-MM. Defaults to the plan's current month." },
       },
       required: ["amount"],
+    },
+  },
+  {
+    name: "add_bill",
+    description: "Add a new bill, credit card, or loan to the user's Bills & Debt list. Use when the user wants to add a recurring bill or a debt. Ask for anything essential you don't have (at least a name and a monthly payment) rather than guessing.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Bill/card/loan name, e.g. 'Car insurance', 'Chase Sapphire', 'Car loan'." },
+        type: { type: "string", enum: ["bill", "credit_card", "loan"], description: "'bill' for a regular recurring bill, 'credit_card' for a revolving credit card, 'loan' for an installment/auto/other loan." },
+        monthly_payment: { type: "number", description: "Monthly payment (for a credit card, the minimum) in dollars." },
+        balance: { type: "number", description: "Outstanding balance owed in dollars (cards/loans). Omit for a regular bill." },
+        apr: { type: "number", description: "Interest rate as a percent, e.g. 24.99. Omit if unknown." },
+        credit_limit: { type: "number", description: "Credit limit in dollars (credit cards only) — enables utilization tracking." },
+        due_day: { type: "number", description: "Day of the month the payment is due (1-31)." },
+        bucket: { type: "string", enum: ["needs", "wants", "savings"], description: "Budget bucket. Default 'needs'." },
+      },
+      required: ["name", "type"],
+    },
+  },
+  {
+    name: "set_bill_due",
+    description: "Change the day of the month a bill/card/loan payment is due.",
+    input_schema: {
+      type: "object",
+      properties: {
+        bill_name: { type: "string", description: "Name of the bill to update." },
+        due_day: { type: "number", description: "New due day of the month (1-31)." },
+      },
+      required: ["bill_name", "due_day"],
+    },
+  },
+  {
+    name: "set_payoff_method",
+    description: "Switch the debt-payoff strategy. 'avalanche' targets the highest-APR debt first (least interest); 'snowball' targets the smallest balance first (fastest wins).",
+    input_schema: {
+      type: "object",
+      properties: { method: { type: "string", enum: ["avalanche", "snowball"], description: "The payoff method to use." } },
+      required: ["method"],
     },
   },
 ];

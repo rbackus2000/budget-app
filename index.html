@@ -1287,6 +1287,16 @@
   .coach-undo-btn { margin-top: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); padding: 7px 14px; border-radius: 8px; font: 600 .82rem inherit; cursor: pointer; transition: all .15s; }
   .coach-undo-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .coach-undo-btn:disabled { opacity: .55; cursor: default; color: var(--green); border-color: var(--green); }
+  /* Big-dollar confirm dialog */
+  .coach-confirm { max-width: 380px; padding: 22px 24px; }
+  .coach-confirm .cc-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); font-weight: 700; margin-bottom: 10px; }
+  .coach-confirm .cc-msg { font-size: 1.05rem; font-weight: 600; color: var(--text); line-height: 1.4; }
+  .coach-confirm .cc-btns { display: flex; gap: 10px; margin-top: 20px; }
+  .coach-confirm .cc-cancel, .coach-confirm .cc-apply { flex: 1; padding: 11px 16px; border-radius: 10px; font: 700 .9rem inherit; cursor: pointer; transition: all .15s; }
+  .coach-confirm .cc-cancel { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+  .coach-confirm .cc-cancel:hover { border-color: var(--text-dim); }
+  .coach-confirm .cc-apply { background: var(--accent-fill); border: 1px solid var(--accent-fill); color: var(--accent-ink); }
+  .coach-confirm .cc-apply:hover { filter: brightness(1.05); }
   .advisor-disclaimer { text-align: left; margin-top: 10px; }
 
   /* Saved coach conversations */
@@ -4596,6 +4606,33 @@ function okTool(result, label, undo) { return { result: result, label: label, un
 function errTool(msg) { return { result: msg, isError: true }; }
 function coachUndoAll(actions) { for (let i = actions.length - 1; i >= 0; i--) { try { actions[i].undo(); } catch (e) {} } }
 
+// Confirm-first for big-dollar changes: money actions at/above this amount pop a
+// one-tap Apply/Cancel before they touch your data. Smaller edits apply instantly.
+const COACH_CONFIRM_OVER = 2000;
+function coachConfirm(message) {
+  return new Promise(resolve => {
+    const overlay = el("div", { class: "modal-overlay" });
+    const done = val => { if (overlay.parentNode) document.body.removeChild(overlay); document.removeEventListener("keydown", onKey); resolve(val); };
+    const onKey = e => { if (e.key === "Escape") done(false); else if (e.key === "Enter") done(true); };
+    document.addEventListener("keydown", onKey);
+    overlay.addEventListener("click", e => { if (e.target === overlay) done(false); });
+    overlay.appendChild(el("div", { class: "modal-card coach-confirm" }, [
+      el("div", { class: "cc-title", text: "Confirm change" }),
+      el("div", { class: "cc-msg", text: message }),
+      el("div", { class: "cc-btns" }, [
+        el("button", { class: "cc-cancel", text: "Cancel", on: { click: () => done(false) } }),
+        el("button", { class: "cc-apply", text: "Apply", on: { click: () => done(true) } }),
+      ]),
+    ]));
+    document.body.appendChild(overlay);
+  });
+}
+// Returns true to proceed. Confirms only when the dollar size clears the threshold.
+function coachGuard(amount, message) {
+  return Math.abs(num(amount)) >= COACH_CONFIRM_OVER ? coachConfirm(message) : Promise.resolve(true);
+}
+const COACH_CANCELLED = { result: "Not applied — you cancelled that change.", declined: true };
+
 function coachFindBill(name) {
   const n = String(name || "").toLowerCase().trim();
   if (!n) return null;
@@ -4621,6 +4658,7 @@ async function execCoachTool(name, input) {
       if (!b) return errTool("No card or bill named “" + input.bill_name + "”. Your bills: " + coachBillList() + ".");
       const amt = num(input.amount);
       if (!(amt > 0)) return errTool("The payment amount must be a positive number.");
+      if (!(await coachGuard(amt, "Log " + fmt(amt) + " to " + (b.name || "card") + "?"))) return COACH_CANCELLED;
       const pid = logPayment(b, amt, input.kind === "min" ? "min" : "extra");
       return okTool("Logged " + fmt(amt) + " to " + (b.name || "card") + ". New balance " + fmt(currentBalance(b)) + ".",
         "Logged " + fmt(amt) + " → " + (b.name || "card"),
@@ -4659,6 +4697,7 @@ async function execCoachTool(name, input) {
     if (name === "set_bank_balance") {
       const amt = num(input.amount);
       if (!(amt >= 0)) return errTool("Give a bank balance of zero or more.");
+      if (!(await coachGuard(amt, "Set your bank balance to " + fmt(amt) + "?"))) return COACH_CANCELLED;
       const prev = state.bank;
       state.bank = String(amt); save(); renderBank(); coachRefresh();
       return okTool("Bank balance set to " + fmt(amt) + ".", "Bank balance → " + fmt(amt),
@@ -4667,6 +4706,8 @@ async function execCoachTool(name, input) {
     if (name === "fund_goal") {
       const amt = num(input.amount);
       const gname = String(input.goal_name || "").toLowerCase().trim();
+      const gTarget = /emerg/.test(gname) ? "the emergency fund" : (input.goal_name || "goal");
+      if (!(await coachGuard(amt, (amt >= 0 ? "Add " : "Remove ") + fmt(Math.abs(amt)) + (amt >= 0 ? " to " : " from ") + gTarget + "?"))) return COACH_CANCELLED;
       if (/emerg/.test(gname)) {
         const prev = state.emergencySaved; const next = Math.max(0, num(state.emergencySaved) + amt);
         state.emergencySaved = String(next); save(); coachRefresh();
@@ -4683,10 +4724,54 @@ async function execCoachTool(name, input) {
         (amt >= 0 ? "+" : "−") + fmt(Math.abs(amt)) + " " + (g.name || "goal"),
         () => { g.saved = prev; save(); coachRefresh(); });
     }
+    if (name === "add_bill") {
+      const nm = String(input.name || "").trim();
+      if (!nm) return errTool("A new bill needs a name.");
+      const typeMap = { credit_card: "Credit Card Debt", loan: "Other Debt / Loan", bill: "Bill" };
+      const type = typeMap[String(input.type || "").toLowerCase()] || "Bill";
+      const bal = num(input.balance);
+      const pay = num(input.monthly_payment);
+      if (!(await coachGuard(Math.max(bal, pay), "Add " + nm + (bal > 0 ? " with a " + fmt(bal) + " balance" : "") + "?"))) return COACH_CANCELLED;
+      const b = newBill();
+      b.name = nm; b.type = type;
+      b.bucket = ["needs", "wants", "savings"].indexOf(String(input.bucket || "")) >= 0 ? input.bucket : "needs";
+      if (pay > 0) b.payment = String(pay);
+      if (bal > 0) b.balance = String(bal);
+      if (num(input.apr) > 0) b.apr = String(num(input.apr));
+      if (num(input.credit_limit) > 0) b.creditLimit = String(num(input.credit_limit));
+      const dd = parseInt(input.due_day, 10);
+      if (dd >= 1 && dd <= 31) b.due = String(dd);
+      state.bills.push(b);
+      coachRefresh();
+      return okTool("Added " + nm + " (" + (TYPE_BADGE[type] ? TYPE_BADGE[type].label : type) + ")" + (pay > 0 ? ", " + fmt(pay) + "/mo" : "") + (bal > 0 ? ", balance " + fmt(bal) : "") + ".",
+        "Added bill: " + nm,
+        () => { state.bills = state.bills.filter(x => x.id !== b.id); coachRefresh(); });
+    }
+    if (name === "set_bill_due") {
+      const b = coachFindBill(input.bill_name);
+      if (!b) return errTool("No bill named “" + input.bill_name + "”. Your bills: " + coachBillList() + ".");
+      const dd = parseInt(input.due_day, 10);
+      if (!(dd >= 1 && dd <= 31)) return errTool("Give a due day between 1 and 31.");
+      const prev = b.due;
+      b.due = String(dd); coachRefresh();
+      return okTool((b.name || "Bill") + " due date set to day " + dd + ".", (b.name || "Bill") + " due → day " + dd,
+        () => { b.due = prev; coachRefresh(); });
+    }
+    if (name === "set_payoff_method") {
+      const m = String(input.method || "").toLowerCase();
+      if (m !== "avalanche" && m !== "snowball") return errTool("Method must be 'avalanche' or 'snowball'.");
+      const prev = state.payoffMethod;
+      if (m === prev) return okTool("Payoff method is already " + m + ".", "Payoff method: " + m, () => {});
+      setPayoffMethod(m); coachRefresh();
+      return okTool("Switched debt payoff to " + m + " (" + (m === "avalanche" ? "highest APR first" : "smallest balance first") + ").",
+        "Payoff method → " + m,
+        () => { setPayoffMethod(prev); coachRefresh(); });
+    }
     if (name === "set_commission") {
       const amt = num(input.amount);
       if (!(amt >= 0)) return errTool("Give a commission amount of zero or more.");
       const mk = /^\d{4}-\d{2}$/.test(String(input.month || "")) ? input.month : coachMonthKey();
+      if (!(await coachGuard(amt, "Set commission for " + mk + " to " + fmt(amt) + "?"))) return COACH_CANCELLED;
       if (!state.commissionByMonth || typeof state.commissionByMonth !== "object") state.commissionByMonth = {};
       const prev = state.commissionByMonth[mk];
       if (amt > 0) state.commissionByMonth[mk] = String(amt); else delete state.commissionByMonth[mk];
@@ -4726,16 +4811,25 @@ function coachSetupVoice() {
     coachRecognition = rec;
     rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     const base = input.value ? input.value.trim() + " " : "";
+    let gotFinal = false, aborted = false;
     rec.onstart = () => { coachListening = true; micBtn.classList.add("listening"); input.placeholder = "Listening…"; };
-    rec.onresult = e => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; input.value = base + t; };
+    rec.onresult = e => {
+      let t = "";
+      for (let i = 0; i < e.results.length; i++) { t += e.results[i][0].transcript; if (e.results[i].isFinal) gotFinal = true; }
+      input.value = base + t;
+    };
     rec.onerror = e => {
+      if (e && e.error === "aborted") aborted = true;
       if (e && (e.error === "not-allowed" || e.error === "service-not-allowed"))
         toast("Microphone is blocked — allow mic access in your browser, or use your keyboard's dictation mic.", true);
     };
     rec.onend = () => {
       coachListening = false; micBtn.classList.remove("listening"); input.placeholder = "Ask your money coach…";
       coachRecognition = null;
-      if (input.value.trim()) input.focus();
+      // Truly hands-free: once you stop speaking, send it automatically. Big-dollar
+      // changes still pop a confirm, and every change has one-tap Undo.
+      if (input.value.trim() && gotFinal && !aborted) sendAdvisorInput();
+      else if (input.value.trim()) input.focus();
     };
     try { rec.start(); } catch (e) {}
   });
