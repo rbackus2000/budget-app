@@ -4247,6 +4247,23 @@ function buildSnapshot() {
         note: "income = recurring deposits (jobs); recurringBills = recurring outflow; otherSpending = variable one-off purchases. Commission is still variable and not part of detectedMonthlyIncome unless it recurs.",
       };
     })(),
+    // Raw bank transaction feed so the coach can answer transaction-level
+    // questions (ATM withdrawals, specific merchants, totals by date/category).
+    // Compact keys to keep the snapshot small: d=date n=name a=amount c=category
+    // p=pending(1) acct=account. amount sign: + = money OUT, − = money IN.
+    transactions: (function () {
+      const txns = state.plaidRecent || [];
+      if (!txns.length) return null;
+      return {
+        note: "Raw bank feed, newest first (~last 120 days). a (amount): POSITIVE = money OUT (spending/withdrawal/payment), NEGATIVE = money IN (deposit/refund). p:1 = pending. Use to answer transaction-level questions — filter/sum by merchant name (n), category (c), date (d) or amount (a). ATM/cash withdrawals usually have c='TRANSFER_OUT' and/or 'ATM'/'Withdrawal' in n.",
+        items: txns.map(t => {
+          const o = { d: t.date, n: t.name, a: +(Number(t.amount) || 0).toFixed(2), c: t.category || null };
+          if (t.pending) o.p = 1;
+          if (t.account) o.acct = t.account;
+          return o;
+        }),
+      };
+    })(),
     // Affordability inputs so the coach can answer "can I afford X?" with
     // caveats (e.g. all cards paid off, or trading a vehicle).
     affordability: (function () {

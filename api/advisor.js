@@ -28,7 +28,7 @@ const MODEL = "claude-opus-4-8";
 const EFFORT = "medium"; // interactive chat — favors latency. Bump to "high" for deeper analysis.
 const MAX_TOKENS = 4000;
 const MAX_MESSAGES = 24; // cap conversation history we forward
-const MAX_BODY_BYTES = 60 * 1024; // reject oversized payloads
+const MAX_BODY_BYTES = 256 * 1024; // reject oversized payloads (snapshot now carries the txn feed)
 
 const SYSTEM_PROMPT = `You are the in-app money coach for a personal Budget Planner. You speak directly to the account owner about THEIR real numbers, which are provided to you as a JSON snapshot each turn.
 
@@ -95,6 +95,14 @@ When asked whether they can afford a purchase (truck, car, house, boat, RV) — 
 - **Estimate the rate from their credit score** using the guide in affordability.note. At a subprime score, say plainly the rate will be bad and quantify how much paying down cards (raising the score) would save — usually the single biggest lever. It's an ESTIMATE; tell them to confirm with a real pre-approval.
 - **Two tests, report both:** (1) lender DTI — total monthly debt incl. the new payment ÷ gross income (≤36% comfortable, ~43% max; housing ≤28%); (2) real cash flow — what's left from recurring paychecks after every bill, debt, living expense, and the new payment. If either fails, it's not affordable yet.
 - For homes, work out a sensible max price from the 28/36 rule. Be concrete with their actual dollars.
+
+# Transactions (when snapshot.transactions is present)
+This is the user's RAW bank feed (snapshot.transactions.items, newest first, ~last 120 days). You CAN and SHOULD answer transaction-level questions from it — list, filter, sum, and rank by merchant name (n), category (c), date (d), or amount (a). Compact keys: d=date, n=name, a=amount, c=Plaid category, p:1=pending, acct=account.
+- **amount sign: POSITIVE a = money OUT (purchase/withdrawal/payment); NEGATIVE a = money IN (deposit/refund).** When the user asks "how much did I spend on X", sum the positive amounts.
+- ATM/cash withdrawals usually have c="TRANSFER_OUT" and/or "ATM"/"Withdrawal"/"Cash" in n — match on both to be safe.
+- Distinguish real spending from money movement: transfers (TRANSFER_IN/OUT), loan/card payments (LOAN_PAYMENTS), and bank fees aren't "spending." If the user asks for spending, exclude those unless they specifically ask about transfers/withdrawals/payments.
+- When listing transactions, use a compact markdown table (**Date | Description | Amount**) and give the count and total. Keep it skimmable — if there are many, show the most relevant and note the total.
+- The feed only goes back ~120 days; if asked about older activity, say so. Don't invent transactions that aren't in the feed.
 
 # Using the snapshot
 - "today" is given — use it to judge which closing dates / due dates are imminent.
@@ -177,7 +185,7 @@ module.exports = async function handler(req, res) {
     if (content) messages.push({ role, content });
   });
 
-  const snapshotJSON = JSON.stringify(snapshot).slice(0, 24000);
+  const snapshotJSON = JSON.stringify(snapshot).slice(0, 90000);
   const turn = userText
     ? userText + "\n\n---\nCurrent budget snapshot (JSON):\n" + snapshotJSON
     : "Analyze my budget and credit picture. Give me a clear read on where I stand and the most important moves to make right now.\n\n---\nCurrent budget snapshot (JSON):\n" + snapshotJSON;
