@@ -951,17 +951,36 @@
   .fs-pc-when { font-weight: 700; font-size: 15px; color: var(--fs-bright); }
   .fs-pcard.now .fs-pc-when { color: var(--accent); }
   .fs-pc-in { font: 700 16px var(--fs-mono); color: var(--accent); }
+  .fs-pc-rowwrap + .fs-pc-rowwrap .fs-pc-row { border-top: 1px solid var(--fs-row-border); }
   .fs-pc-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; }
-  .fs-pc-row + .fs-pc-row { border-top: 1px solid var(--fs-row-border); }
+  .fs-pc-row.expandable { cursor: pointer; }
   .fs-pc-lbl { font-size: 13px; color: var(--fs-mid); display: flex; align-items: center; gap: 8px; }
   .fs-pc-lbl::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: var(--fs-mid); flex: none; }
   .fs-pc-row.bills .fs-pc-lbl::before { background: #e0a800; }
   .fs-pc-row.wants .fs-pc-lbl::before { background: #4aa3ff; }
   .fs-pc-row.save .fs-pc-lbl::before { background: var(--accent); }
+  .fs-pc-right { display: flex; align-items: center; gap: 7px; }
   .fs-pc-val { font: 600 15px var(--fs-mono); color: var(--fs-bright); }
+  .fs-pc-chev { font-size: 13px; line-height: 1; color: var(--fs-dim); transition: transform .15s; }
+  .fs-pc-rowwrap.open .fs-pc-chev { transform: rotate(180deg); }
+  .fs-pc-detail { display: none; padding: 2px 0 8px 16px; }
+  .fs-pc-rowwrap.open .fs-pc-detail { display: block; }
+  .fs-pc-ditem { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; color: var(--fs-mid); }
+  .fs-pc-ditem .di-a { font-family: var(--fs-mono); color: var(--fs-bright); white-space: nowrap; }
+  .fs-pc-ditem.dim { color: var(--fs-dim); }
   .fs-pc-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 11px; border-top: 1px solid var(--fs-row-border); font-size: 12px; color: var(--fs-dim); }
   .fs-pc-foot .short { color: var(--red); font-weight: 700; }
-  @media (max-width: 820px) { .fs-paystrip { grid-template-columns: 1fr; } }
+
+  /* Spendable-now hero */
+  .fs-spendable { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; margin-bottom: 16px; border-radius: 18px; border: 1px solid var(--accent); background: linear-gradient(135deg, rgba(190,242,80,.10), rgba(190,242,80,.02)); cursor: pointer; }
+  .fs-spendable.neg { border-color: var(--red); background: linear-gradient(135deg, rgba(220,80,80,.12), rgba(220,80,80,.02)); }
+  .fs-sp-left { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .fs-sp-lbl { font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); font-weight: 700; }
+  .fs-spendable.neg .fs-sp-lbl { color: var(--red); }
+  .fs-sp-sub { font-size: 12.5px; color: var(--fs-dim); }
+  .fs-sp-amt { font: 800 32px var(--fs-mono); color: var(--fs-bright); letter-spacing: -1px; white-space: nowrap; }
+  .fs-spendable.neg .fs-sp-amt { color: var(--red); }
+  @media (max-width: 820px) { .fs-paystrip { grid-template-columns: 1fr; } .fs-sp-amt { font-size: 26px; } }
   .fs-chead { display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .fs-ctitle { margin:0; font-size:19px; font-weight:600; color:var(--fs-bright); }
   .fs-expand { color:var(--fs-dim); cursor:pointer; flex:none; }
@@ -5603,8 +5622,26 @@ function renderHome() {
    *  The headline of the cockpit: each upcoming check split into Bills, *
    *  Wants, and Savings & Debt — the at-a-glance "where does each check  *
    *  go?". Pulled live from the same payday plan the Plan tab uses.      */
+  const pct = planBucketPercents();
   const payWins = (plan && plan.windows.length) ? plan.windows.slice(0, 3) : [];
   if (payWins.length) {
+    const w0 = payWins[0];
+    // SPENDABLE NOW: cash you can safely use today without breaking the plan =
+    // bank − unpaid bills due before the next check − this check's savings/debt.
+    const committedBills = w0.minTotal || 0;
+    const committedSave = w0.savingsEarmark || 0;
+    const spendable = num(state.bank) - committedBills - committedSave;
+    const heroNeg = spendable < 0;
+    const hero = el("div", { class: "fs-spendable" + (heroNeg ? " neg" : ""), on: { click: () => showView("plan") } }, [
+      el("div", { class: "fs-sp-left" }, [
+        el("span", { class: "fs-sp-lbl", text: heroNeg ? "Over-committed" : "Safe to spend now" }),
+        el("span", { class: "fs-sp-sub", text: heroNeg
+          ? "Bills + savings due before your next check exceed your cash on hand"
+          : "Cash on hand after " + moneyStr(committedBills) + " bills + " + moneyStr(committedSave) + " savings/debt due before your next check" }),
+      ]),
+      el("span", { class: "fs-sp-amt", text: (heroNeg ? "−" : "") + moneyStr(spendable) }),
+    ]);
+
     const strip = el("div", { class: "fs-paystrip" });
     payWins.forEach((w, i) => {
       const billsTot = w.minTotal || 0;
@@ -5615,21 +5652,41 @@ function renderHome() {
         el("span", { class: "fs-pc-when", title: dateShort(w.date), text: i === 0 ? "This check" : dateShort(w.date).replace(/^\w+, /, "") }),
         el("span", { class: "fs-pc-in", text: "+" + moneyStr(w.amount) }),
       ]));
-      [["Bills", billsTot, "bills"], ["Wants", wantsTot, "wants"], ["Savings / Debt", saveTot, "save"]].forEach(r =>
-        card.appendChild(el("div", { class: "fs-pc-row " + r[2] }, [
-          el("span", { class: "fs-pc-lbl", text: r[0] }),
-          el("span", { class: "fs-pc-val", text: moneyStr(r[1]) }),
+
+      // The line items behind each figure (tap a row to expand).
+      const billItems = w.bills.filter(x => !x.paid && !x.paidOff).map(x => ({ name: x.bill.name || "Bill", amt: x.amount }));
+      const saveItems = (w.extras || []).map(x => ({ name: "↑ " + (x.bill.name || "debt") + " (extra payoff)", amt: x.amount }));
+      if (w.goalLeftover > 0.5) saveItems.push({ name: "💰 Savings / goals", amt: w.goalLeftover });
+      const wantItems = [{ name: "Fun / discretionary (" + Math.round(pct.wants) + "% of this check)", amt: wantsTot }];
+      [{ lbl: "Bills", val: billsTot, cls: "bills", items: billItems },
+       { lbl: "Wants", val: wantsTot, cls: "wants", items: wantItems },
+       { lbl: "Savings / Debt", val: saveTot, cls: "save", items: saveItems }].forEach(r => {
+        const wrap = el("div", { class: "fs-pc-rowwrap" });
+        const rowEl = el("div", { class: "fs-pc-row " + r.cls + " expandable", on: { click: e => { e.stopPropagation(); wrap.classList.toggle("open"); } } }, [
+          el("span", { class: "fs-pc-lbl", text: r.lbl }),
+          el("span", { class: "fs-pc-right" }, [ el("span", { class: "fs-pc-val", text: moneyStr(r.val) }), el("span", { class: "fs-pc-chev", text: "⌄" }) ]),
+        ]);
+        const detail = el("div", { class: "fs-pc-detail" });
+        if (r.items.length) r.items.forEach(it => detail.appendChild(el("div", { class: "fs-pc-ditem" }, [
+          el("span", { class: "di-n", text: it.name }), el("span", { class: "di-a", text: moneyStr(it.amt) }),
         ])));
+        else detail.appendChild(el("div", { class: "fs-pc-ditem dim" }, [el("span", { text: "Nothing from this check" })]));
+        wrap.appendChild(rowEl); wrap.appendChild(detail);
+        card.appendChild(wrap);
+      });
+
       card.appendChild(el("div", { class: "fs-pc-foot" }, [
         el("span", { text: "Left after this check" }),
         el("span", { class: w.shortfall > 0 ? "short" : "", text: w.shortfall > 0 ? "−" + moneyStr(w.shortfall) : moneyStr(w.endBalance) }),
       ]));
       strip.appendChild(card);
     });
+
     grid.appendChild(el("div", { class: "fs-paywrap" }, [
+      hero,
       el("div", { class: "fs-strip-head" }, [
         el("h3", { class: "fs-ctitle", text: "Your next paychecks" }),
-        el("span", { class: "fs-strip-sub", text: "Where each check goes — tap to open the plan" }),
+        el("span", { class: "fs-strip-sub", text: "Where each check goes — tap a figure to see the line items" }),
       ]),
       strip,
     ]));
