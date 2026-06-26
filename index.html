@@ -939,6 +939,9 @@
   .fs-col { display:flex; flex-direction:column; gap:13px; min-width:0; }
   .fs-card { background:var(--fs-card-bg); border:1px solid var(--fs-card-border); border-radius:20px; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
 
+  /* Hidden native date input behind the segment's "Date" button */
+  .fs-date-hidden { position: absolute; width: 0; height: 0; padding: 0; margin: 0; border: 0; opacity: 0; pointer-events: none; }
+
   /* Cockpit: per-paycheck breakdown strip */
   .fs-paywrap { margin-bottom: 18px; }
   .fs-strip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -5365,6 +5368,10 @@ function fsAxisLabels(max) {
 // Home = the "Financial summary" fintech dashboard, populated entirely from
 // the user's real numbers (income, bills, payday plan, goals, cards). Layout +
 // styling ported from the design handoff; all figures come from existing logic.
+// Dashboard spending period, driven by the Today / This month / Date segment.
+let homePeriod = "month";       // "today" | "month" | "date"
+let homePeriodDate = "";        // "YYYY-MM-DD" when period === "date"
+
 function renderHome() {
   const grid = document.getElementById("homeGrid");
   const greet = document.getElementById("homeGreeting");
@@ -5379,6 +5386,22 @@ function renderHome() {
   const income = totalIncome();
   const monthly = totalMonthlyPayments();
   const cash = currentCash();
+
+  // Actual spending for the selected period, from the bank transaction feed.
+  const feed = state.plaidRecent || [];
+  const hasFeed = feed.length > 0;
+  const tdy = todayStr();
+  const inPeriod = t => {
+    const d = String(t.date || "");
+    if (homePeriod === "today") return d === tdy;
+    if (homePeriod === "date") return homePeriodDate && d === homePeriodDate;
+    return d.slice(0, 7) === tdy.slice(0, 7); // this month
+  };
+  const periodTxns = feed.filter(inPeriod);
+  const periodSpend = periodTxns.reduce((s, t) => { const a = Number(t.amount) || 0; return s + (a > 0 ? a : 0); }, 0);
+  const periodLabel = homePeriod === "today" ? "today"
+    : homePeriod === "date" ? (homePeriodDate ? (parseDate(homePeriodDate) ? parseDate(homePeriodDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : homePeriodDate) : "selected day")
+    : "this month";
   const plan = buildPaydayPlan();
 
   /* ---------------- HEADER ---------------- */
@@ -5389,8 +5412,17 @@ function renderHome() {
     el("p", { class: "fs-subtitle", text: "Track your monthly activities" }),
   ]));
   const seg = el("div", { class: "fs-seg" });
-  ["Today", "This month"].forEach((t, i) => seg.appendChild(el("button", { class: "fs-seg-btn" + (i === 1 ? " active" : ""), text: t, on: { click: e => fsToggle(seg, e.currentTarget) } })));
-  seg.appendChild(el("button", { class: "fs-seg-btn", on: { click: e => fsToggle(seg, e.currentTarget) } }, [svgIcon(ICON_CALENDAR, 15), document.createTextNode("Date")]));
+  const segBtn = (label, per) => el("button", { class: "fs-seg-btn" + (homePeriod === per ? " active" : ""), text: label,
+    on: { click: () => { homePeriod = per; if (per !== "date") homePeriodDate = ""; renderHome(); } } });
+  seg.appendChild(segBtn("Today", "today"));
+  seg.appendChild(segBtn("This month", "month"));
+  // Date opens a native day picker; choosing a day scopes spending to it.
+  const dateInput = el("input", { props: { type: "date", value: homePeriodDate || tdy }, attrs: { class: "fs-date-hidden" },
+    on: { change: e => { if (e.target.value) { homePeriod = "date"; homePeriodDate = e.target.value; renderHome(); } } } });
+  const dateBtn = el("button", { class: "fs-seg-btn" + (homePeriod === "date" ? " active" : ""),
+    on: { click: () => { try { dateInput.showPicker(); } catch (e) { dateInput.click(); } } } },
+    [svgIcon(ICON_CALENDAR, 15), document.createTextNode(homePeriod === "date" && homePeriodDate ? " " + periodLabel : "Date")]);
+  seg.appendChild(dateBtn); seg.appendChild(dateInput);
   let masked = false;
   const balWrap = el("span");
   const renderBal = () => { clear(balWrap); balWrap.appendChild(masked ? el("span", { class: "fs-balance-amt", text: "••••••" }) : fsMoney(cash, { cls: "fs-balance-amt" })); };
@@ -5532,19 +5564,32 @@ function renderHome() {
   const colA = el("div", { class: "fs-col" }, [ana, ieRow, threeUp]);
 
   /* ---------------- COLUMN B ---------------- */
+  // When a bank is connected, Total spending shows REAL spend for the period
+  // the segment selects (Today / This month / a picked Date). Otherwise it
+  // falls back to the monthly-bills total.
+  const tsAmount = hasFeed ? periodSpend : monthly;
+  const tsSub = hasFeed ? periodLabel : "per month";
   const ts = el("div", { class: "fs-card", style: { padding: "22px 22px 16px" } }, [
     el("div", { class: "fs-chead", style: { alignItems: "flex-start" } }, [
       el("h3", { class: "fs-ctitle", text: "Total spending" }),
-      el("div", { style: { textAlign: "right" } }, [el("div", { style: { font: "600 12px var(--fs-mono)", color: "var(--fs-dim)" }, text: "per month" })]),
+      el("div", { style: { textAlign: "right" } }, [el("div", { style: { font: "600 12px var(--fs-mono)", color: "var(--fs-dim)" }, text: tsSub })]),
     ]),
-    el("div", { style: { marginTop: "6px" } }, [(function () { const a = fsMoney(monthly); a.style.font = "700 31px var(--fs-mono)"; a.style.letterSpacing = "-1px"; a.style.color = "var(--fs-bright)"; return a; })()]),
+    el("div", { style: { marginTop: "6px" } }, [(function () { const a = fsMoney(tsAmount); a.style.font = "700 31px var(--fs-mono)"; a.style.letterSpacing = "-1px"; a.style.color = "var(--fs-bright)"; return a; })()]),
   ]);
-  const billsBar = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).slice(0, 8);
-  if (billsBar.length) {
-    const maxBar = Math.max.apply(null, billsBar.map(x => x.value).concat([1]));
+  // Bars: top spend categories for the period (from the feed), else top bills.
+  let spendBar;
+  if (hasFeed) {
+    const byCat = {};
+    periodTxns.forEach(t => { const a = Number(t.amount) || 0; if (a <= 0) return; const c = prettyCat(t.category) || "Other"; byCat[c] = (byCat[c] || 0) + a; });
+    spendBar = Object.keys(byCat).map(k => ({ name: k, value: byCat[k] })).sort((a, b) => b.value - a.value).slice(0, 8);
+  } else {
+    spendBar = state.bills.map(b => ({ name: b.name || "Bill", value: monthlyPayment(b) })).filter(x => x.value > 0).slice(0, 8);
+  }
+  if (spendBar.length) {
+    const maxBar = Math.max.apply(null, spendBar.map(x => x.value).concat([1]));
     const barsWrap = el("div", { class: "fs-bars" });
     const chips = el("div", { class: "fs-chips" });
-    billsBar.forEach(b => {
+    spendBar.forEach(b => {
       const hi = b.value === maxBar;
       const hPct = Math.max(14, Math.round(b.value / maxBar * 100));
       barsWrap.appendChild(el("div", { class: "fs-barcol" }, [
@@ -5553,6 +5598,8 @@ function renderHome() {
       chips.appendChild(el("div", { class: "fs-chip" }, [el("span", { style: { background: hi ? "var(--accent)" : fsColor(b.name), color: hi ? "#1a1b0c" : "#fff" }, text: b.name.charAt(0).toUpperCase() })]));
     });
     ts.appendChild(el("div", { style: { marginTop: "18px" } }, [barsWrap, chips]));
+  } else if (hasFeed) {
+    ts.appendChild(el("div", { style: { marginTop: "18px", fontSize: "13px", color: "var(--fs-dim)" }, text: "No spending " + periodLabel + "." }));
   }
   const sav = el("div", { class: "fs-card", style: { padding: "22px 22px" } });
   const savings = [];
