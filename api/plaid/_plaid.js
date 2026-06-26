@@ -20,8 +20,6 @@ const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY ||
   "sb_publishable_IUyRTgtGyYkAebmQIwODmA_gl2noPax";
 
-const ALLOWED_EMAILS = ["rbackus2000@gmail.com", "bridgettehuff282@gmail.com"];
-
 // sandbox | production. Defaults to sandbox so we can't accidentally hit real
 // banks until it's deliberately flipped via env.
 const PLAID_ENV = (process.env.PLAID_ENV || "sandbox").toLowerCase();
@@ -45,8 +43,9 @@ function sendJSON(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// ---- Auth: confirm a real Supabase session for an allowlisted email -------
-// Returns { id, email } or null. Plaid endpoints are owner-only.
+// ---- Auth: confirm a real Supabase session for the household ADMIN ---------
+// Returns { id, email } or null. The bank link is admin-only (the admin owns
+// the Plaid items; other members see the synced data via the shared budget).
 async function verifyUser(authHeader) {
   const token = String(authHeader || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
@@ -56,9 +55,14 @@ async function verifyUser(authHeader) {
     });
     if (!r.ok) return null;
     const user = await r.json();
-    const email = (user && user.email ? String(user.email) : "").toLowerCase();
-    if (!email || ALLOWED_EMAILS.indexOf(email) < 0) return null;
-    return { id: user.id, email: email };
+    if (!user || !user.id) return null;
+    const m = await fetch(
+      SUPABASE_URL + "/rest/v1/household_members?member_id=eq." + encodeURIComponent(user.id) + "&select=role",
+      { headers: { Authorization: "Bearer " + token, apikey: SUPABASE_ANON_KEY } }
+    );
+    const rows = m.ok ? await m.json() : [];
+    if (!rows.length || rows[0].role !== "admin") return null;
+    return { id: user.id, email: (user.email || "").toLowerCase() };
   } catch (e) {
     return null;
   }

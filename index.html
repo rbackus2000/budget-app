@@ -1308,6 +1308,32 @@
   .coach-undo-btn { margin-top: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); padding: 7px 14px; border-radius: 8px; font: 600 .82rem inherit; cursor: pointer; transition: all .15s; }
   .coach-undo-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .coach-undo-btn:disabled { opacity: .55; cursor: default; color: var(--green); border-color: var(--green); }
+  /* Role badge + read-only (viewer) mode */
+  .role-badge { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
+  .role-badge.r-admin { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+  .role-badge.r-editor { color: #4aa3ff; border-color: rgba(74,163,255,.42); }
+  .role-badge.r-viewer { color: var(--text-dim); }
+  body.ro .views input, body.ro .views select, body.ro .views textarea, body.ro .views input[type=range] { pointer-events: none; opacity: .6; }
+  body.ro .views .btn-add-item, body.ro .views .btn-upload, body.ro .views .icon-btn, body.ro .views .del-btn,
+  body.ro .views .pd-push, body.ro .views .log-pay-link, body.ro .views .btn-pay, body.ro .views .fs-ghost,
+  body.ro .views .plan-btn, body.ro .views .bal-link, body.ro .views .pd-bill-left input { pointer-events: none; opacity: .45; }
+  /* Family members modal */
+  .fam-card { max-width: 470px; padding: 22px 24px; }
+  .fam-head { display: flex; align-items: center; justify-content: space-between; }
+  .fam-head h3 { font-size: 1.15rem; font-weight: 700; letter-spacing: -.01em; }
+  .fam-sub { font-size: .82rem; color: var(--text-dim); margin: 6px 0 14px; line-height: 1.45; }
+  .fam-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .fam-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+  .fam-name { font-weight: 600; font-size: .92rem; }
+  .fam-email { font-size: .75rem; color: var(--text-dim); }
+  .fam-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .fam-role-sel { width: auto; padding: 6px 8px; font-size: .8rem; }
+  .fam-count { font-size: .78rem; color: var(--text-dim); font-weight: 600; margin-bottom: 9px; }
+  .fam-add { display: flex; flex-direction: column; gap: 9px; padding: 14px; border: 1px dashed var(--border); border-radius: 12px; }
+  .fam-add-title { font-weight: 700; font-size: .9rem; }
+  .fam-add .btn-pay { margin-top: 2px; justify-content: center; }
+  .fam-err { color: var(--red); font-size: .8rem; }
+  .fam-err:empty { display: none; }
   /* Big-dollar confirm dialog */
   .coach-confirm { max-width: 380px; padding: 22px 24px; }
   .coach-confirm .cc-title { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); font-weight: 700; margin-bottom: 10px; }
@@ -1429,6 +1455,7 @@
         <span class="tt-label" id="themeLabel">Light</span>
       </button>
       <span class="acct-email" id="acctEmail"></span>
+      <button class="btn-export nav-signout" id="familyBtn" style="display:none" title="Add and manage family members">👪 Family members</button>
       <button class="btn-export nav-signout" id="changePwBtn" style="display:none" title="Change your password">Change password</button>
       <button class="btn-export nav-signout" id="signOutBtn" style="display:none" title="Sign out">Sign out</button>
     </div>
@@ -1445,6 +1472,7 @@
         <button class="navbtn" id="nextMonth" title="Next month">›</button>
       </div>
       <div class="topbar-actions">
+        <span class="role-badge" id="roleBadge" style="display:none"></span>
         <span class="sync-status" id="syncStatus"></span>
         <button class="btn-export" id="exportBtn" title="Download a CSV you can open in Excel or Google Sheets">⬇ Export</button>
       </div>
@@ -1811,8 +1839,8 @@ const SUPABASE_URL = "https://vqhuudfrtuurxfismbph.supabase.co";
 const SUPABASE_KEY = "sb_publishable_IUyRTgtGyYkAebmQIwODmA_gl2noPax";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// UX-only allowlist — real enforcement is a database trigger on auth.users.
-const ALLOWED_EMAILS = ["rbackus2000@gmail.com", "bridgettehuff282@gmail.com"];
+// Access control is now household-membership + role (admin/editor/viewer),
+// enforced by the signup trigger + row-level security. See /api/household.
 let currentUser = null;
 let householdId = null; // the budget row shared by everyone in the household
 let syncTimer = null;
@@ -2003,6 +2031,9 @@ function normalizeState() {
 }
 
 function save() {
+  // Viewers are read-only — never persist their changes (the DB blocks writes
+  // too; this just avoids local churn and sync errors).
+  if (currentUser && !canEdit()) return;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
   catch (e) { /* storage full / unavailable — fail quietly */ }
   scheduleCloudSync();
@@ -2033,15 +2064,40 @@ function scheduleCloudSync() {
 
 // Everyone in a household shares ONE budgets row, keyed by the household id.
 // Resolve it once per sign-in; fall back to the user's own id (solo user).
+let myRole = "admin"; // admin | editor | viewer — resolved at sign-in
 async function resolveHousehold() {
-  if (!currentUser) { householdId = null; return; }
+  if (!currentUser) { householdId = null; myRole = "viewer"; return; }
   try {
     const { data } = await sb.from("household_members")
-      .select("household_id").eq("member_id", currentUser.id).maybeSingle();
+      .select("household_id, role").eq("member_id", currentUser.id).maybeSingle();
     householdId = (data && data.household_id) || currentUser.id;
-  } catch (e) { householdId = currentUser.id; }
+    myRole = (data && data.role) || "admin"; // no membership row => owner of own data
+  } catch (e) { householdId = currentUser.id; myRole = "admin"; }
 }
 function budgetKey() { return householdId || (currentUser && currentUser.id) || null; }
+function canEdit() { return myRole !== "viewer"; }   // admin + editor can write
+function isAdmin() { return myRole === "admin"; }     // only admin manages family
+
+// Reflect the current role in the UI: read-only mode, coach/family visibility,
+// the role badge, and Plaid (bank) controls (admin-only).
+function applyRole() {
+  const signedIn = !!currentUser;
+  document.body.classList.toggle("ro", signedIn && !canEdit());
+  document.body.classList.toggle("is-admin", signedIn && isAdmin());
+  const coachNav = document.querySelector('.nav-item[data-nav="coach"]');
+  if (coachNav) coachNav.style.display = (signedIn && canEdit()) ? "" : "none";
+  const fam = document.getElementById("familyBtn");
+  if (fam) fam.style.display = (signedIn && isAdmin()) ? "" : "none";
+  const badge = document.getElementById("roleBadge");
+  if (badge) {
+    badge.style.display = signedIn ? "" : "none";
+    badge.textContent = myRole === "viewer" ? "View only" : (myRole === "editor" ? "Editor" : "Admin");
+    badge.className = "role-badge r-" + myRole;
+  }
+  // A viewer sitting on the (now hidden) Coach view gets bounced home.
+  if (signedIn && !canEdit() && activeView === "coach") showView("home");
+  if (typeof plaidRefreshUI === "function") plaidRefreshUI();
+}
 
 async function cloudSync() {
   const key = budgetKey();
@@ -2082,6 +2138,7 @@ async function cloudLoad() {
   localStorage.setItem(OWNER_KEY, key);
   applyTheme();
   renderAll();
+  applyRole();          // read-only mode / coach + family visibility / role badge
   plaidRefreshUI();
   updateCoachBadge();
   runOpenAutomations(); // daily bank sync + weekly coach check-in (background, throttled)
@@ -4564,6 +4621,7 @@ async function runAdvisor(userText) {
   userText = String(userText || "").trim();
 
   if (!currentUser) { advisorError("Sign in to use the money coach."); return; }
+  if (!canEdit()) { advisorError("The AI coach is available to editors and admins."); return; }
   if (userText) advisorRenderMsg("user", userText);
   advisorSetBusy(true);
 
@@ -5036,7 +5094,7 @@ const DAY_MS_AUTO = 24 * 3600 * 1000;
 
 // Sync the bank automatically at most once per ~day (only if one is connected).
 async function maybeAutoSync() {
-  if (!currentUser || !state.plaidSyncedAt) return;
+  if (!currentUser || !isAdmin() || !state.plaidSyncedAt) return; // only the bank owner (admin) syncs
   const last = new Date(state.plaidSyncedAt).getTime();
   if (last && Date.now() - last < 20 * 3600 * 1000) return; // already fresh today
   await plaidSync(); // refreshes balance, cards, spending, and the transaction feed
@@ -5199,9 +5257,10 @@ function plaidRefreshUI() {
   const connect = document.getElementById("plaidConnectBtn");
   const disc = document.getElementById("plaidDisconnectBtn");
   const connected = !!state.plaidSyncedAt;
-  if (sync) sync.style.display = connected ? "" : "none";
-  if (disc) disc.style.display = connected ? "" : "none";
-  if (connect) connect.textContent = connected ? "🔗 Connect another bank" : "🔗 Connect bank";
+  const admin = !currentUser || isAdmin(); // managing the bank link is admin-only
+  if (sync) sync.style.display = (connected && admin) ? "" : "none";
+  if (disc) disc.style.display = (connected && admin) ? "" : "none";
+  if (connect) { connect.style.display = admin ? "" : "none"; connect.textContent = connected ? "🔗 Connect another bank" : "🔗 Connect bank"; }
   plaidRenderSpending();
   plaidRenderTxns();
 }
@@ -6200,6 +6259,101 @@ function shiftMonth(delta) {
 /* ------------------------------ AUTH ------------------------------ */
 function authErr(msg) { document.getElementById("authErr").textContent = msg || ""; }
 
+// Admin-only: add / manage family members (name, email, password, role).
+async function openFamilyModal() {
+  if (!currentUser || !isAdmin()) return;
+  const token = await getAuthToken();
+  if (!token) { toast("Your session expired — sign in again.", true); return; }
+
+  const overlay = el("div", { class: "modal-overlay" });
+  const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); document.removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+
+  const listWrap = el("div", { class: "fam-list" });
+  const formWrap = el("div", { class: "fam-form" });
+  overlay.appendChild(el("div", { class: "modal-card fam-card" }, [
+    el("div", { class: "fam-head" }, [
+      el("h3", { text: "Family members" }),
+      el("button", { class: "modal-close", text: "✕", on: { click: close } }),
+    ]),
+    el("div", { class: "fam-sub", text: "Add up to 5 people. Editors can change everything and use the AI coach; viewers can only look." }),
+    listWrap, formWrap,
+  ]));
+  document.body.appendChild(overlay);
+
+  const api = async (method, body) => {
+    const res = await fetch("/api/household/members", {
+      method,
+      headers: Object.assign({ Authorization: "Bearer " + token }, body ? { "Content-Type": "application/json" } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+
+  async function refresh() {
+    listWrap.textContent = "Loading…"; formWrap.textContent = "";
+    let data;
+    try { data = await api("GET"); }
+    catch (e) { listWrap.textContent = ""; listWrap.appendChild(el("div", { class: "fam-err", text: e.message })); return; }
+    const members = data.members || [];
+    listWrap.textContent = "";
+    members.forEach(m => {
+      const right = el("div", { class: "fam-right" });
+      if (m.role === "admin") {
+        right.appendChild(el("span", { class: "role-badge r-admin", text: "Admin" }));
+      } else {
+        const sel = selectEl([["editor", "Editor"], ["viewer", "Viewer"]], m.role, async () => {
+          try { await api("PATCH", { member_id: m.member_id, role: sel.value }); toast("Role updated"); }
+          catch (e) { toast(e.message, true); refresh(); }
+        });
+        sel.className = "fam-role-sel";
+        right.appendChild(sel);
+        right.appendChild(el("button", { class: "del-btn", text: "✕", title: "Remove member", on: { click: async () => {
+          if (!confirm("Remove " + (m.name || m.email) + "? Their login will stop working.")) return;
+          try { await api("DELETE", { member_id: m.member_id }); toast("Removed"); refresh(); }
+          catch (e) { toast(e.message, true); }
+        } } }));
+      }
+      listWrap.appendChild(el("div", { class: "fam-row" }, [
+        el("div", { class: "fam-who" }, [
+          el("div", { class: "fam-name", text: m.name || m.email }),
+          el("div", { class: "fam-email", text: m.email }),
+        ]),
+        right,
+      ]));
+    });
+
+    const familyCount = members.filter(m => m.role !== "admin").length;
+    const maxFamily = (data.max || 6) - 1;
+    formWrap.appendChild(el("div", { class: "fam-count", text: familyCount + " of " + maxFamily + " family members" }));
+    if (familyCount >= maxFamily) {
+      formWrap.appendChild(el("div", { class: "fam-sub", text: "You've reached the limit — remove someone to add another." }));
+      return;
+    }
+    const nameI = el("input", { attrs: { placeholder: "Name", autocomplete: "off" } });
+    const emailI = el("input", { props: { type: "email" }, attrs: { placeholder: "Email", autocomplete: "off" } });
+    const passI = el("input", { props: { type: "text" }, attrs: { placeholder: "Temporary password (min 8)", autocomplete: "off" } });
+    const roleI = selectEl([["editor", "Editor — can edit & use coach"], ["viewer", "Viewer — read only"]], "editor", () => {});
+    const err = el("div", { class: "fam-err" });
+    const addBtn = el("button", { class: "btn-pay", text: "Add member", on: { click: async () => {
+      err.textContent = ""; addBtn.disabled = true; addBtn.textContent = "Adding…";
+      try {
+        await api("POST", { name: nameI.value.trim(), email: emailI.value.trim(), password: passI.value, role: roleI.value });
+        toast((nameI.value.trim() || "Member") + " added"); refresh();
+      } catch (e) { err.textContent = e.message; addBtn.disabled = false; addBtn.textContent = "Add member"; }
+    } } });
+    formWrap.appendChild(el("div", { class: "fam-add" }, [
+      el("div", { class: "fam-add-title", text: "Add a family member" }),
+      nameI, emailI, passI, roleI, err, addBtn,
+    ]));
+  }
+  refresh();
+}
+
 function showGate() {
   document.getElementById("authGate").style.display = "flex";
   document.getElementById("signOutBtn").style.display = "none";
@@ -6211,11 +6365,9 @@ function hideGate() { document.getElementById("authGate").style.display = "none"
 
 function onSignedIn(session) {
   const u = session.user;
-  if (!u.email || ALLOWED_EMAILS.indexOf(u.email.toLowerCase()) < 0) {
-    sb.auth.signOut();
-    authErr("This budget planner is private. That email doesn't have access.");
-    return;
-  }
+  // Access is controlled at account-creation time (only an admin can create
+  // logins) and enforced by row-level security + role. Any real session here is
+  // a household member; their role is resolved in cloudLoad().
   hideGate();
   if (currentUser && currentUser.id === u.id) return; // already loaded this user
   currentUser = u;
@@ -6236,10 +6388,6 @@ async function doSignIn() {
   const password = document.getElementById("authPassword").value;
   authErr("");
   if (!email || email.indexOf("@") < 1) { authErr("Enter a valid email address."); return; }
-  if (ALLOWED_EMAILS.indexOf(email.toLowerCase()) < 0) {
-    authErr("This budget planner is private. That email doesn't have access.");
-    return;
-  }
   if (!password) { authErr("Enter your password."); return; }
   btn.disabled = true; btn.textContent = "Signing in…";
   const { error } = await sb.auth.signInWithPassword({ email, password });
@@ -6584,6 +6732,7 @@ function init() {
   document.getElementById("authEmail").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("authPassword").focus(); });
   document.getElementById("signOutBtn").addEventListener("click", () => sb.auth.signOut());
   const cpBtn = document.getElementById("changePwBtn"); if (cpBtn) cpBtn.addEventListener("click", changePassword);
+  const famBtn = document.getElementById("familyBtn"); if (famBtn) famBtn.addEventListener("click", openFamilyModal);
   const pwToggle = document.getElementById("authPwToggle");
   if (pwToggle) pwToggle.addEventListener("click", () => {
     const inp = document.getElementById("authPassword");

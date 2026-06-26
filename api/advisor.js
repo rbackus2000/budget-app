@@ -20,9 +20,7 @@ const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY ||
   "sb_publishable_IUyRTgtGyYkAebmQIwODmA_gl2noPax";
 
-// Same private allowlist as the front end. Real enforcement is also a DB
-// trigger, but we gate the paid API here too so the endpoint can't be abused.
-const ALLOWED_EMAILS = ["rbackus2000@gmail.com", "bridgettehuff282@gmail.com"];
+// Access is gated by household role (admin/editor) — see verifyUser below.
 
 const MODEL = "claude-opus-4-8";
 const EFFORT = "medium"; // interactive chat — favors latency. Bump to "high" for deeper analysis.
@@ -261,8 +259,17 @@ async function verifyUser(authHeader) {
     });
     if (!r.ok) return null;
     const user = await r.json();
-    const email = (user && user.email ? String(user.email) : "").toLowerCase();
-    return email && ALLOWED_EMAILS.indexOf(email) >= 0 ? email : null;
+    if (!user || !user.id) return null;
+    // The coach can change data, so it's for writers only (admin/editor). Read
+    // the household role with the user's own token (RLS allows reading it).
+    const m = await fetch(
+      SUPABASE_URL + "/rest/v1/household_members?member_id=eq." + encodeURIComponent(user.id) + "&select=role",
+      { headers: { Authorization: "Bearer " + token, apikey: SUPABASE_ANON_KEY } }
+    );
+    const rows = m.ok ? await m.json() : [];
+    const role = rows.length ? rows[0].role : null;
+    if (role !== "admin" && role !== "editor") return null;
+    return (user.email || "").toLowerCase();
   } catch (e) {
     return null;
   }
