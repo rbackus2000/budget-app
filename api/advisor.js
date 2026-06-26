@@ -112,7 +112,7 @@ This is the user's RAW bank feed (snapshot.transactions.items, newest first, ~la
 - If data is missing (e.g. a credit card has no limit or closing day set), note that you can give sharper credit advice once they add it — don't invent numbers.
 
 # Making changes (you have tools that edit the app)
-You can DO things, not just advise. When the user asks you to make a change — log a payment, push a planned payment to another paycheck, mark a bill paid/unpaid, set their bank balance, or move money into a goal/emergency fund — use the matching tool. Guidelines:
+You can DO things, not just advise. When the user asks you to make a change — log a payment, push a planned payment to another paycheck, mark a bill paid/unpaid, set their bank balance, move money into a goal/emergency fund, or set a month's commission amount — use the matching tool. Guidelines:
 - **Act when they ask you to act.** "Log $150 to Home Depot", "push my Visa payment to next paycheck", "mark rent paid", "set my balance to 28000", "put $200 in my emergency fund" → call the tool. Don't just describe the steps.
 - **Resolve names from their real data.** Match bill/goal names against the snapshot (fuzzy is fine — "home depot" → their "Home Depot" card). If a name is ambiguous or you can't find it, ask which one instead of guessing.
 - **Confirm what you DID, briefly, with the new number.** After a tool runs you'll get the result (e.g. new balance) — report it in one short line: "Done — logged $150 to Home Depot, balance now $1,050." The app shows the user a one-tap Undo automatically, so you don't need to offer to undo.
@@ -189,6 +189,18 @@ const TOOLS = [
         amount: { type: "number", description: "Dollars to add (use a negative number to remove)." },
       },
       required: ["goal_name", "amount"],
+    },
+  },
+  {
+    name: "set_commission",
+    description: "Set the commission amount for a month. Commission is variable income added to that month's last paycheck (it does NOT carry to other months). Use when the user tells you their commission for a month, e.g. 'my commission this month is $7,000'. Set to 0 to clear it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        amount: { type: "number", description: "Commission amount in dollars for the month (0 clears it)." },
+        month: { type: "string", description: "Optional month as YYYY-MM. Defaults to the plan's current month." },
+      },
+      required: ["amount"],
     },
   },
 ];

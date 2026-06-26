@@ -4683,6 +4683,17 @@ async function execCoachTool(name, input) {
         (amt >= 0 ? "+" : "−") + fmt(Math.abs(amt)) + " " + (g.name || "goal"),
         () => { g.saved = prev; save(); coachRefresh(); });
     }
+    if (name === "set_commission") {
+      const amt = num(input.amount);
+      if (!(amt >= 0)) return errTool("Give a commission amount of zero or more.");
+      const mk = /^\d{4}-\d{2}$/.test(String(input.month || "")) ? input.month : coachMonthKey();
+      if (!state.commissionByMonth || typeof state.commissionByMonth !== "object") state.commissionByMonth = {};
+      const prev = state.commissionByMonth[mk];
+      if (amt > 0) state.commissionByMonth[mk] = String(amt); else delete state.commissionByMonth[mk];
+      save(); renderCommission(); coachRefresh();
+      return okTool("Commission for " + mk + " set to " + fmt(amt) + ".", "Commission " + mk + " → " + fmt(amt),
+        () => { if (prev == null) delete state.commissionByMonth[mk]; else state.commissionByMonth[mk] = prev; save(); renderCommission(); coachRefresh(); });
+    }
     return errTool("Unknown action “" + name + "”.");
   } catch (e) {
     return errTool("That action failed: " + ((e && e.message) || "error"));
