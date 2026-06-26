@@ -712,6 +712,33 @@
   .txn-amt.pos { color: var(--green); }
   .txn-pending { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); border: 1px solid var(--card-border); border-radius: 6px; padding: 1px 5px; }
 
+  /* Coach nav unread dot */
+  .nav-item { position: relative; }
+  .nav-item.has-badge::after { content: ""; position: absolute; top: 9px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
+
+  /* Weekly check-in card (Coach view) */
+  .checkin-card { border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); padding: 14px 16px; margin-bottom: 14px; }
+  .checkin-card.unread { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .checkin-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .checkin-title { font-weight: 700; font-size: .95rem; color: var(--text); }
+  .checkin-date { font-size: .75rem; color: var(--text-dim); flex: 1; }
+  .checkin-x { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1rem; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+  .checkin-x:hover { color: var(--text); background: var(--surface); }
+  .checkin-body { font-size: .9rem; color: var(--text); line-height: 1.5; }
+
+  /* This-paycheck focus card (Plan view) */
+  .tw-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .tw-eyebrow { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
+  .tw-date { font-size: 1.05rem; font-weight: 800; color: var(--text); }
+  .tw-in { font-size: 1.1rem; font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+  .tw-lbl { font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); font-weight: 600; margin: 12px 0 4px; }
+  .tw-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); font-size: .92rem; }
+  .tw-row .tw-name { color: var(--text); }
+  .tw-row .tw-amt { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .tw-row.accent .tw-name, .tw-row.accent .tw-amt { color: var(--accent); }
+  .tw-row.dim .tw-name, .tw-row.dim .tw-amt { color: var(--text-dim); font-weight: 600; }
+  .tw-warn { margin-top: 10px; padding: 8px 12px; border-radius: 9px; background: var(--red-soft, rgba(220,80,80,.12)); color: var(--red); font-size: .85rem; }
+
   /* Plan-from (go-live) control */
   .plan-from-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
   .plan-from-row label { margin: 0; font-size: .78rem; color: var(--text-dim); font-weight: 600; }
@@ -1377,6 +1404,7 @@
         <button class="btn-add-item" id="analyzeBtn"><span>✦</span> Analyze my budget</button>
       </div>
     </div>
+    <div id="coachCheckIn"></div>
     <div class="coach-history" id="coachHistory" style="display:none"></div>
     <div class="advisor-body" id="advisorBody">
       <div class="advisor-empty" id="advisorEmpty">Ask anything about your money — “Can I afford a $300/mo car payment?”, “Which card should I pay first?”, “How do I get my credit score up before April?” Or hit <b>Analyze my budget</b> for a full read.</div>
@@ -1469,6 +1497,11 @@
   </section>
 
   <!-- PLAN SELECTOR + CATEGORIES -->
+  <!-- THIS WEEK: the next paycheck's money moves at a glance -->
+  <section class="card view" data-view="plan" id="thisWeekCard" style="display:none">
+    <div id="thisWeek"></div>
+  </section>
+
   <section class="card view" data-view="plan">
     <h2>Budget Plan</h2>
     <div class="plan-btns" id="planBtns"></div>
@@ -1797,7 +1830,8 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, bufferMonths: 1, creditScore: "", creditReport: { markdown: "", date: "" } };
+  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, bufferMonths: 1, creditScore: "", creditReport: { markdown: "", date: "" },
+  lastAutoSync: "", lastCoachCheckIn: "", weeklyCheckIn: null, weeklyCheckInUnread: false };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1835,6 +1869,10 @@ function normalizeState() {
   { const v = parseFloat(state.commissionFunPct); state.commissionFunPct = (isFinite(v) && v >= 0 && v <= 100) ? v : 10; }
   { const v = parseFloat(state.goalsSlicePct); state.goalsSlicePct = (isFinite(v) && v >= 0 && v <= 100) ? v : 20; }
   { const v = parseFloat(state.bufferMonths); state.bufferMonths = (isFinite(v) && v >= 0 && v <= 12) ? v : 1; }
+  if (typeof state.lastAutoSync !== "string") state.lastAutoSync = "";
+  if (typeof state.lastCoachCheckIn !== "string") state.lastCoachCheckIn = "";
+  if (state.weeklyCheckIn && typeof state.weeklyCheckIn !== "object") state.weeklyCheckIn = null;
+  state.weeklyCheckInUnread = !!state.weeklyCheckInUnread;
   if (typeof state.creditScore !== "string") state.creditScore = state.creditScore == null ? "" : String(state.creditScore);
   if (!state.creditReport || typeof state.creditReport !== "object") state.creditReport = { markdown: "", date: "" };
   if (state.theme !== "light" && state.theme !== "dark") state.theme = "dark";
@@ -1906,6 +1944,8 @@ async function cloudLoad() {
   applyTheme();
   renderAll();
   plaidRefreshUI();
+  updateCoachBadge();
+  runOpenAutomations(); // daily bank sync + weekly coach check-in (background, throttled)
 }
 
 function renderAll() {
@@ -3386,7 +3426,55 @@ function barNode(actual, target, max, higherBetter) {
 }
 
 /* ----------------------- PAYDAY PLAN RENDER ----------------------- */
+// "This paycheck" focus card — pulls the upcoming payday window out of the plan
+// and shows exactly what to do with it: pay these bills, send this much extra to
+// debt, set this aside for savings/goals. The at-a-glance weekly answer.
+function renderThisWeek() {
+  const card = document.getElementById("thisWeekCard");
+  const host = document.getElementById("thisWeek");
+  if (!card || !host) return;
+  clear(host);
+  const plan = buildPaydayPlan();
+  if (!plan || !plan.windows.length || !state.bills.length) { card.style.display = "none"; return; }
+  const today = todayMidnight();
+  const w = plan.windows.find(x => x.date >= today) || plan.windows[0];
+  card.style.display = "";
+
+  host.appendChild(el("div", { class: "tw-head" }, [
+    el("div", null, [
+      el("span", { class: "tw-eyebrow", text: "This paycheck" }),
+      el("span", { class: "tw-date", text: dateShort(w.date).replace(/^\w+, /, "") }),
+    ]),
+    el("span", { class: "tw-in", text: "+" + fmt(w.amount) }),
+  ]));
+
+  const unpaid = w.bills.filter(x => !x.paid && !x.paidOff);
+  if (unpaid.length) {
+    host.appendChild(el("div", { class: "tw-lbl", text: "Pay these bills" }));
+    unpaid.forEach(x => host.appendChild(el("div", { class: "tw-row" }, [
+      el("span", { class: "tw-name", text: x.bill.name || "Bill" }),
+      el("span", { class: "tw-amt", text: fmt(x.amount) }),
+    ])));
+  }
+  if (w.extras && w.extras.length) {
+    host.appendChild(el("div", { class: "tw-lbl", text: "Extra to debt — pays it off faster" }));
+    w.extras.forEach(x => host.appendChild(el("div", { class: "tw-row accent" }, [
+      el("span", { class: "tw-name", text: "↑ " + (x.bill.name || "debt") }),
+      el("span", { class: "tw-amt", text: fmt(x.amount) }),
+    ])));
+  }
+  host.appendChild(el("div", { class: "tw-lbl", text: "Set aside" }));
+  if (w.goalLeftover > 0.5) host.appendChild(el("div", { class: "tw-row" }, [
+    el("span", { class: "tw-name", text: "💰 Savings / goals" }), el("span", { class: "tw-amt", text: fmt(w.goalLeftover) }),
+  ]));
+  host.appendChild(el("div", { class: "tw-row dim" }, [
+    el("span", { class: "tw-name", text: "Fun / spending" }), el("span", { class: "tw-amt", text: fmt(w.funEarmark) }),
+  ]));
+  if (w.shortfall > 0) host.appendChild(el("div", { class: "tw-warn", text: "⚠ Runs short by " + fmt(w.shortfall) + " — trim a bill or push one to the next check." }));
+}
+
 function renderPaydayPlan() {
+  renderThisWeek();
   document.getElementById("methodAvalanche").classList.toggle("active", state.payoffMethod !== "snowball");
   document.getElementById("methodSnowball").classList.toggle("active", state.payoffMethod === "snowball");
 
@@ -4484,6 +4572,91 @@ async function plaidSync() {
   }
 }
 
+/* ------------------- OPEN-APP AUTOMATIONS ------------------------- *
+ *  Stitches the system together: when you open the app it (1) syncs the *
+ *  bank at most once a day, then (2) once a week has the AI coach review *
+ *  your progress and tell you the week's moves. Both are throttled and   *
+ *  run in the background so opening the app stays instant.               *
+ * ------------------------------------------------------------------ */
+const DAY_MS_AUTO = 24 * 3600 * 1000;
+
+// Sync the bank automatically at most once per ~day (only if one is connected).
+async function maybeAutoSync() {
+  if (!currentUser || !state.plaidSyncedAt) return;
+  const last = new Date(state.plaidSyncedAt).getTime();
+  if (last && Date.now() - last < 20 * 3600 * 1000) return; // already fresh today
+  await plaidSync(); // refreshes balance, cards, spending, and the transaction feed
+  state.lastAutoSync = new Date().toISOString();
+  save();
+}
+
+const WEEKLY_CHECKIN_PROMPT =
+  "This is an automated WEEKLY CHECK-IN — I did not type this. Using my current financial snapshot, give me a short, " +
+  "motivating progress review in plain language: (1) How I'm tracking this week — debt balances, savings/goals funded, " +
+  "and spending vs my budget; (2) Exactly what to do with my next paycheck to get out of debt faster while STILL putting " +
+  "money into savings — name the specific bills to pay, the extra debt payment (which card and how much), and the amount " +
+  "to move to savings/goals; (3) One thing to watch this week. Use my real numbers. If I'm off track, say so kindly and how to fix it.";
+
+// Once every 7 days, have the coach review progress in the background. The
+// result is stored and badged on the Coach tab — non-intrusive.
+async function maybeWeeklyCheckIn() {
+  if (!currentUser) return;
+  const last = state.lastCoachCheckIn ? new Date(state.lastCoachCheckIn).getTime() : 0;
+  if (last && Date.now() - last < 7 * DAY_MS_AUTO) return;     // not due yet
+  if (!state.bills.length && !state.plaidSyncedAt) return;     // nothing to review
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+    const res = await fetch("/api/advisor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ message: WEEKLY_CHECKIN_PROMPT, messages: [], snapshot: buildSnapshot() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    const reply = String(data.reply || "").trim();
+    if (!reply) return;
+    state.weeklyCheckIn = { date: new Date().toISOString(), text: reply };
+    state.weeklyCheckInUnread = true;
+    state.lastCoachCheckIn = new Date().toISOString();
+    save();
+    updateCoachBadge();
+    renderCoachCheckIn();
+    toast("📋 Your weekly check-in from the coach is ready", true);
+  } catch (e) { /* silent — retry on next open */ }
+}
+
+// Fire-and-forget on app open: sync first (fresh data), then weekly review.
+async function runOpenAutomations() {
+  try { await maybeAutoSync(); } catch (e) {}
+  try { await maybeWeeklyCheckIn(); } catch (e) {}
+}
+
+// Dot on the Coach nav item when there's an unread weekly check-in.
+function updateCoachBadge() {
+  const btn = document.querySelector('.nav-item[data-nav="coach"]');
+  if (btn) btn.classList.toggle("has-badge", !!state.weeklyCheckInUnread);
+}
+
+// Render the latest weekly check-in at the top of the Coach view.
+function renderCoachCheckIn() {
+  const host = document.getElementById("coachCheckIn");
+  if (!host) return;
+  clear(host);
+  const ci = state.weeklyCheckIn;
+  if (!ci || !ci.text) return;
+  let when = "";
+  try { const d = new Date(ci.date); if (!isNaN(d)) when = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }); } catch (e) {}
+  const card = el("div", { class: "checkin-card" + (state.weeklyCheckInUnread ? " unread" : "") });
+  card.appendChild(el("div", { class: "checkin-head" }, [
+    el("span", { class: "checkin-title", text: "📋 Weekly check-in" }),
+    el("span", { class: "checkin-date", text: when }),
+    el("button", { class: "checkin-x", title: "Dismiss", text: "✕", on: { click: () => { state.weeklyCheckInUnread = false; save(); updateCoachBadge(); renderCoachCheckIn(); } } }),
+  ]));
+  card.appendChild(el("div", { class: "checkin-body" }, [ mdToDom(ci.text) ]));
+  host.appendChild(card);
+}
+
 // Map Plaid data onto app state: bank balance + credit cards (matched by Plaid
 // account id so re-syncs update the same bill instead of duplicating it).
 function plaidApply(d) {
@@ -5065,6 +5238,10 @@ function showView(v) {
   const sbEl = document.getElementById("sidebar"); if (sbEl) sbEl.classList.remove("open");
   if (isHome) renderHome();
   if (v === "afford") { affRenderInputs(); renderAfford(); }
+  if (v === "coach") {
+    renderCoachCheckIn();
+    if (state.weeklyCheckInUnread) { state.weeklyCheckInUnread = false; save(); updateCoachBadge(); }
+  }
   window.scrollTo(0, 0);
   const mainEl = document.querySelector(".main"); if (mainEl) mainEl.scrollTop = 0;
 }
