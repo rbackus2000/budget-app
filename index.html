@@ -1278,6 +1278,15 @@
   .advisor-input input { flex: 1; }
   .advisor-input .btn-pay { padding: 11px 20px; }
   .advisor-input .btn-pay:disabled { opacity: .5; cursor: not-allowed; }
+  .advisor-mic { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); border-radius: 10px; cursor: pointer; transition: all .15s; }
+  .advisor-mic:hover { border-color: var(--accent); color: var(--accent); }
+  .advisor-mic.listening { background: var(--red); border-color: var(--red); color: #fff; animation: micpulse 1.2s ease-in-out infinite; }
+  @keyframes micpulse { 0%,100% { box-shadow: 0 0 0 0 var(--red-soft); } 50% { box-shadow: 0 0 0 7px transparent; } }
+  /* Coach action confirmation + one-tap Undo */
+  .coach-actions-list { font-size: .8rem; color: var(--green); margin-top: 8px; font-weight: 600; }
+  .coach-undo-btn { margin-top: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); padding: 7px 14px; border-radius: 8px; font: 600 .82rem inherit; cursor: pointer; transition: all .15s; }
+  .coach-undo-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .coach-undo-btn:disabled { opacity: .55; cursor: default; color: var(--green); border-color: var(--green); }
   .advisor-disclaimer { text-align: left; margin-top: 10px; }
 
   /* Saved coach conversations */
@@ -1490,6 +1499,7 @@
     </div>
     <div class="advisor-input">
       <input type="text" id="advisorInput" placeholder="Ask your money coach…" autocomplete="off" />
+      <button class="advisor-mic" id="advisorMic" title="Speak your request" aria-label="Voice input"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
       <button class="btn-pay" id="advisorSend">Send</button>
     </div>
     <div class="hint advisor-disclaimer">Educational guidance based on your numbers — not licensed financial advice.</div>
@@ -4411,7 +4421,7 @@ function advisorScroll() {
   body.scrollTop = body.scrollHeight;
 }
 
-function advisorRenderMsg(role, content) {
+function advisorRenderMsg(role, content, actions) {
   const body = document.getElementById("advisorBody");
   const empty = document.getElementById("advisorEmpty");
   if (empty) empty.remove();
@@ -4421,12 +4431,22 @@ function advisorRenderMsg(role, content) {
   if (role === "user") msg.appendChild(el("div", { class: "bubble", text: content }));
   else {
     msg.appendChild(el("div", { class: "bubble" }, [ mdToDom(content) ]));
-    // Export just this plan as a PDF (separate from the budget CSV export).
-    msg.appendChild(el("button", {
-      class: "coach-export-btn", text: "⬇ Export PDF",
-      title: "Save this plan as a PDF",
-      on: { click: () => exportCoachPlanPDF(content) },
-    }));
+    if (actions && actions.length) {
+      // The coach just changed your data — show what it did + a single Undo.
+      msg.appendChild(el("div", { class: "coach-actions-list", text: "✓ " + actions.map(a => a.label).join(" · ") }));
+      msg.appendChild(el("button", {
+        class: "coach-undo-btn",
+        text: "↩ Undo " + (actions.length > 1 ? actions.length + " changes" : "change"),
+        on: { click: e => { coachUndoAll(actions); e.currentTarget.textContent = "✓ Undone"; e.currentTarget.disabled = true; toast("Reverted"); } },
+      }));
+    } else {
+      // Export just this plan as a PDF (separate from the budget CSV export).
+      msg.appendChild(el("button", {
+        class: "coach-export-btn", text: "⬇ Export PDF",
+        title: "Save this plan as a PDF",
+        on: { click: () => exportCoachPlanPDF(content) },
+      }));
+    }
   }
   body.appendChild(msg);
   advisorScroll();
@@ -4489,6 +4509,8 @@ function advisorError(msg) {
   advisorScroll();
 }
 
+const DEFAULT_ANALYZE_PROMPT = "Analyze my budget and credit picture. Give me a clear read on where I stand and the most important moves to make right now.";
+
 async function runAdvisor(userText) {
   if (advisorBusy) return;
   userText = String(userText || "").trim();
@@ -4504,22 +4526,56 @@ async function runAdvisor(userText) {
   } catch (e) {}
   if (!token) { advisorSetBusy(false); advisorError("Your session expired — sign in again."); return; }
 
+  const post = payload => fetch("/api/advisor", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(payload),
+  });
+  const textOf = data => (Array.isArray(data && data.content)
+    ? data.content.filter(b => b && b.type === "text").map(b => b.text).join("\n").trim()
+    : "") || String((data && data.reply) || "").trim();
+
+  const uContent = userText || "[Analyze my budget]";
+  const applied = []; // actions executed this turn — collapsed into one Undo
+
   try {
-    const res = await fetch("/api/advisor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ message: userText, messages: advisorHistory.slice(-24), snapshot: buildSnapshot() }),
-    });
-    const data = await res.json().catch(() => ({}));
+    // Round 1 uses the normal shape so the server appends the question (and the
+    // default-analyze prompt for the Analyze button).
+    let res = await post({ message: userText, messages: advisorHistory.slice(-24), snapshot: buildSnapshot() });
+    let data = await res.json().catch(() => ({}));
+    if (!res.ok) { advisorSetBusy(false); advisorError(data.error || "The advisor is unavailable right now."); return; }
+
+    // Mirror what the server saw so tool follow-ups carry full context.
+    const working = advisorHistory.slice(-24).map(m => ({ role: m.role, content: m.content }));
+    working.push({ role: "user", content: userText || DEFAULT_ANALYZE_PROMPT });
+
+    let guard = 0;
+    while (data && data.stop_reason === "tool_use" && Array.isArray(data.content) && guard++ < 6) {
+      working.push({ role: "assistant", content: data.content });
+      const results = [];
+      for (const tu of data.content.filter(b => b && b.type === "tool_use")) {
+        const out = await execCoachTool(tu.name, tu.input || {});
+        if (out && out.undo) applied.push(out);
+        const r = { type: "tool_result", tool_use_id: tu.id, content: (out && out.result) || "Done." };
+        if (out && out.isError) r.is_error = true;
+        results.push(r);
+      }
+      working.push({ role: "user", content: results });
+      res = await post({ toolFollowup: true, messages: working, snapshot: buildSnapshot() });
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        advisorSetBusy(false);
+        advisorError(data.error || "The advisor hit a snag finishing that.");
+        if (applied.length) toast("Applied " + applied.length + " change(s)", false, { label: "Undo", onClick: () => coachUndoAll(applied) });
+        return;
+      }
+    }
+
     advisorSetBusy(false);
-
-    if (!res.ok) { advisorError(data.error || "The advisor is unavailable right now."); return; }
-
-    const reply = String(data.reply || "").trim();
-    const uContent = userText || "[Analyze my budget]";
+    const reply = textOf(data) || (applied.length ? "Done." : "I couldn't generate a response — try rephrasing.");
     advisorHistory.push({ role: "user", content: uContent });
     advisorHistory.push({ role: "assistant", content: reply });
-    advisorRenderMsg("assistant", reply);
+    advisorRenderMsg("assistant", reply, applied.length ? applied : null);
 
     // Persist this exchange so it can be revisited from History.
     await coachEnsureConversation(uContent);
@@ -4528,6 +4584,108 @@ async function runAdvisor(userText) {
   } catch (e) {
     advisorSetBusy(false);
     advisorError("Couldn't reach the coach. Check your connection and try again.");
+    if (applied.length) toast("Applied " + applied.length + " change(s)", false, { label: "Undo", onClick: () => coachUndoAll(applied) });
+  }
+}
+
+/* ---- Coach actions: the tools the model calls run here, against `state`, via
+   the same functions the buttons use. Each returns a result string for the
+   model and an `undo` so the whole turn collapses into one Undo. ---- */
+function coachRefresh() { recalcAll(); }
+function okTool(result, label, undo) { return { result: result, label: label, undo: undo }; }
+function errTool(msg) { return { result: msg, isError: true }; }
+function coachUndoAll(actions) { for (let i = actions.length - 1; i >= 0; i--) { try { actions[i].undo(); } catch (e) {} } }
+
+function coachFindBill(name) {
+  const n = String(name || "").toLowerCase().trim();
+  if (!n) return null;
+  let b = state.bills.find(x => (x.name || "").toLowerCase() === n);
+  if (!b) b = state.bills.find(x => { const xn = (x.name || "").toLowerCase(); return xn && (xn.indexOf(n) >= 0 || n.indexOf(xn) >= 0); });
+  return b || null;
+}
+function coachNextOccurrenceKey(bill) {
+  const plan = buildPaydayPlan();
+  if (!plan || !plan.windows) return null;
+  for (const w of plan.windows) for (const x of (w.bills || [])) {
+    if (x.bill && x.bill.id === bill.id && !x.paid) return x.dateKey;
+  }
+  return null;
+}
+function coachMonthKey() { const { y, m } = viewYM(); return y + "-" + String(m + 1).padStart(2, "0"); }
+function coachBillList() { return state.bills.map(x => x.name).filter(Boolean).join(", ") || "none"; }
+
+async function execCoachTool(name, input) {
+  try {
+    if (name === "log_card_payment") {
+      const b = coachFindBill(input.bill_name);
+      if (!b) return errTool("No card or bill named “" + input.bill_name + "”. Your bills: " + coachBillList() + ".");
+      const amt = num(input.amount);
+      if (!(amt > 0)) return errTool("The payment amount must be a positive number.");
+      const pid = logPayment(b, amt, input.kind === "min" ? "min" : "extra");
+      return okTool("Logged " + fmt(amt) + " to " + (b.name || "card") + ". New balance " + fmt(currentBalance(b)) + ".",
+        "Logged " + fmt(amt) + " → " + (b.name || "card"),
+        () => deletePayment(b, pid));
+    }
+    if (name === "move_planned_payment") {
+      const b = coachFindBill(input.bill_name);
+      if (!b) return errTool("No bill named “" + input.bill_name + "”. Your bills: " + coachBillList() + ".");
+      if (!b.defer || typeof b.defer !== "object") b.defer = {};
+      const dk = (input.occurrence_date && /^\d{4}-\d{2}-\d{2}$/.test(input.occurrence_date)) ? input.occurrence_date : coachNextOccurrenceKey(b);
+      if (!dk) return errTool("I couldn't find an upcoming " + (b.name || "bill") + " payment in the plan to move.");
+      if (input.direction === "back") {
+        const had = b.defer[dk] || 0;
+        if (!had) return errTool((b.name || "That bill") + " isn't pushed — nothing to move back.");
+        delete b.defer[dk]; coachRefresh();
+        return okTool("Moved " + (b.name || "bill") + " back to its due date.", "Moved " + (b.name || "bill") + " back",
+          () => { b.defer[dk] = had; coachRefresh(); });
+      }
+      const before = b.defer[dk] || 0;
+      b.defer[dk] = before + 1; coachRefresh();
+      return okTool("Pushed " + (b.name || "bill") + " to the next paycheck.", "Pushed " + (b.name || "bill") + " → next paycheck",
+        () => { if (before) b.defer[dk] = before; else delete b.defer[dk]; coachRefresh(); });
+    }
+    if (name === "set_bill_paid") {
+      const b = coachFindBill(input.bill_name);
+      if (!b) return errTool("No bill named “" + input.bill_name + "”. Your bills: " + coachBillList() + ".");
+      if (!b.paid || typeof b.paid !== "object") b.paid = {};
+      const mk = /^\d{4}-\d{2}$/.test(String(input.month || "")) ? input.month : coachMonthKey();
+      const was = !!b.paid[mk]; const want = !!input.paid;
+      if (want) b.paid[mk] = true; else delete b.paid[mk];
+      coachRefresh();
+      return okTool((b.name || "Bill") + " marked " + (want ? "paid" : "unpaid") + " for " + mk + ".",
+        (b.name || "Bill") + " → " + (want ? "paid" : "unpaid"),
+        () => { if (was) b.paid[mk] = true; else delete b.paid[mk]; coachRefresh(); });
+    }
+    if (name === "set_bank_balance") {
+      const amt = num(input.amount);
+      if (!(amt >= 0)) return errTool("Give a bank balance of zero or more.");
+      const prev = state.bank;
+      state.bank = String(amt); save(); renderBank(); coachRefresh();
+      return okTool("Bank balance set to " + fmt(amt) + ".", "Bank balance → " + fmt(amt),
+        () => { state.bank = prev; save(); renderBank(); coachRefresh(); });
+    }
+    if (name === "fund_goal") {
+      const amt = num(input.amount);
+      const gname = String(input.goal_name || "").toLowerCase().trim();
+      if (/emerg/.test(gname)) {
+        const prev = state.emergencySaved; const next = Math.max(0, num(state.emergencySaved) + amt);
+        state.emergencySaved = String(next); save(); coachRefresh();
+        return okTool((amt >= 0 ? "Added " : "Removed ") + fmt(Math.abs(amt)) + (amt >= 0 ? " to" : " from") + " the emergency fund. Now " + fmt(next) + ".",
+          (amt >= 0 ? "+" : "−") + fmt(Math.abs(amt)) + " emergency fund",
+          () => { state.emergencySaved = prev; save(); coachRefresh(); });
+      }
+      let g = state.goals.find(x => (x.name || "").toLowerCase() === gname);
+      if (!g) g = state.goals.find(x => { const xn = (x.name || "").toLowerCase(); return xn && (xn.indexOf(gname) >= 0 || gname.indexOf(xn) >= 0); });
+      if (!g) return errTool("No goal named “" + input.goal_name + "”. Your goals: " + (state.goals.map(x => x.name).filter(Boolean).join(", ") || "none") + ".");
+      const prev = g.saved; const next = Math.max(0, num(g.saved) + amt);
+      g.saved = String(next); save(); coachRefresh();
+      return okTool((amt >= 0 ? "Added " : "Removed ") + fmt(Math.abs(amt)) + (amt >= 0 ? " to " : " from ") + (g.name || "goal") + ". Now " + fmt(next) + ".",
+        (amt >= 0 ? "+" : "−") + fmt(Math.abs(amt)) + " " + (g.name || "goal"),
+        () => { g.saved = prev; save(); coachRefresh(); });
+    }
+    return errTool("Unknown action “" + name + "”.");
+  } catch (e) {
+    return errTool("That action failed: " + ((e && e.message) || "error"));
   }
 }
 
@@ -4537,6 +4695,39 @@ function sendAdvisorInput() {
   if (!text) return;
   input.value = "";
   runAdvisor(text);
+}
+
+/* Voice input — browser Speech Recognition dictates into the coach box. Works
+   on desktop Chrome/Edge and Android; iOS Safari support is unreliable, so if
+   the API is missing we hide the mic (the iOS keyboard's own dictation mic
+   still types into the box). We transcribe, then let the user hit Send so a
+   mis-hear can't fire an action on its own. */
+let coachRecognition = null, coachListening = false;
+function coachSetupVoice() {
+  const micBtn = document.getElementById("advisorMic");
+  if (!micBtn) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { micBtn.style.display = "none"; return; }
+  const input = document.getElementById("advisorInput");
+  micBtn.addEventListener("click", () => {
+    if (coachListening) { try { coachRecognition && coachRecognition.stop(); } catch (e) {} return; }
+    const rec = new SR();
+    coachRecognition = rec;
+    rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+    const base = input.value ? input.value.trim() + " " : "";
+    rec.onstart = () => { coachListening = true; micBtn.classList.add("listening"); input.placeholder = "Listening…"; };
+    rec.onresult = e => { let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; input.value = base + t; };
+    rec.onerror = e => {
+      if (e && (e.error === "not-allowed" || e.error === "service-not-allowed"))
+        toast("Microphone is blocked — allow mic access in your browser, or use your keyboard's dictation mic.", true);
+    };
+    rec.onend = () => {
+      coachListening = false; micBtn.classList.remove("listening"); input.placeholder = "Ask your money coach…";
+      coachRecognition = null;
+      if (input.value.trim()) input.focus();
+    };
+    try { rec.start(); } catch (e) {}
+  });
 }
 
 /* ------------------ STATEMENT UPLOAD (PDF → bill) ----------------- */
@@ -6213,6 +6404,7 @@ function init() {
   document.getElementById("payoffPlanBtn").addEventListener("click", () => runAdvisor("Build me a complete plan I can export to PDF. Start with my current opening bank balance, then my monthly bills, then a detailed debt payoff schedule with dates and amounts. Importantly, use my bank balance as a lump sum to pay the debt off as soon as possible — show how much sooner I'd be debt-free and how much interest I'd save — then my savings/goals."));
   document.getElementById("advisorSend").addEventListener("click", sendAdvisorInput);
   document.getElementById("advisorInput").addEventListener("keydown", e => { if (e.key === "Enter") sendAdvisorInput(); });
+  coachSetupVoice();
   document.getElementById("coachNewBtn").addEventListener("click", coachNewChat);
   document.getElementById("coachCheckInBtn").addEventListener("click", runCheckInNow);
   document.getElementById("coachHistoryBtn").addEventListener("click", toggleCoachHistory);

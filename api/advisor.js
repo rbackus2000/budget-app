@@ -111,10 +111,87 @@ This is the user's RAW bank feed (snapshot.transactions.items, newest first, ~la
 - If utilization or a closing date is urgent (reports within the lead window), call it out up front.
 - If data is missing (e.g. a credit card has no limit or closing day set), note that you can give sharper credit advice once they add it — don't invent numbers.
 
+# Making changes (you have tools that edit the app)
+You can DO things, not just advise. When the user asks you to make a change — log a payment, push a planned payment to another paycheck, mark a bill paid/unpaid, set their bank balance, or move money into a goal/emergency fund — use the matching tool. Guidelines:
+- **Act when they ask you to act.** "Log $150 to Home Depot", "push my Visa payment to next paycheck", "mark rent paid", "set my balance to 28000", "put $200 in my emergency fund" → call the tool. Don't just describe the steps.
+- **Resolve names from their real data.** Match bill/goal names against the snapshot (fuzzy is fine — "home depot" → their "Home Depot" card). If a name is ambiguous or you can't find it, ask which one instead of guessing.
+- **Confirm what you DID, briefly, with the new number.** After a tool runs you'll get the result (e.g. new balance) — report it in one short line: "Done — logged $150 to Home Depot, balance now $1,050." The app shows the user a one-tap Undo automatically, so you don't need to offer to undo.
+- **You can chain tools** when the user asks for several changes, or combine a change with advice.
+- **Amounts are dollars.** For log_card_payment use kind "extra" unless they clearly mean the minimum. To move a goal balance down, pass a negative amount to fund_goal.
+- **Don't invent changes they didn't ask for.** Only call a tool in response to a clear instruction. For pure questions ("how much did I spend on gas?"), just answer — no tools.
+- If a tool returns an error, tell the user plainly what went wrong and what to fix (e.g. "I don't see a card named 'Lowes' — your cards are Visa and Home Depot. Which one?").
+
 # Format
-Markdown only: ## for section headers, ** for bold, - for bullets, 1. for ordered steps. Keep total length tight and skimmable. End an analysis with one clear "Do this first" line.
+Markdown only: ## for section headers, ** for bold, - for bullets, 1. for ordered steps. Keep total length tight and skimmable. End an analysis with one clear "Do this first" line. (When you've just performed an action, skip the headers — a single confirming sentence is best.)
 
 You are educational guidance, not licensed financial/tax/legal advice — mention this at most once, lightly, only when it genuinely matters.`;
+
+// Tools the coach can call. The actual mutations run CLIENT-SIDE (that's where
+// the user's state lives) — the server just relays the tool_use blocks to the
+// browser, which executes them against `state` via the same functions the
+// buttons use, then sends back tool_result blocks for a confirming reply.
+const TOOLS = [
+  {
+    name: "log_card_payment",
+    description: "Log a payment toward a credit card or debt, reducing its tracked balance. Use when the user says they paid, or want to log a payment, on a card/debt.",
+    input_schema: {
+      type: "object",
+      properties: {
+        bill_name: { type: "string", description: "Name of the card/debt as it appears in the user's bills (fuzzy match ok), e.g. 'Home Depot', 'Visa'." },
+        amount: { type: "number", description: "Payment amount in dollars (positive)." },
+        kind: { type: "string", enum: ["extra", "min"], description: "Payment type. 'extra' (default) for an extra/lump payment, 'min' for the scheduled minimum." },
+      },
+      required: ["bill_name", "amount"],
+    },
+  },
+  {
+    name: "move_planned_payment",
+    description: "In the payday plan, push a bill's upcoming planned payment to the next paycheck (direction 'later'), or move a previously-pushed one back to its due date (direction 'back'). This reschedules within the plan; it does NOT log a payment.",
+    input_schema: {
+      type: "object",
+      properties: {
+        bill_name: { type: "string", description: "Name of the bill, e.g. 'Visa', 'Rent'." },
+        direction: { type: "string", enum: ["later", "back"], description: "'later' pushes to the next paycheck; 'back' undoes a push." },
+        occurrence_date: { type: "string", description: "Optional ISO date (YYYY-MM-DD) of the specific occurrence to move. Omit to use the next upcoming one." },
+      },
+      required: ["bill_name", "direction"],
+    },
+  },
+  {
+    name: "set_bill_paid",
+    description: "Mark a bill's payment for a month as paid (paid=true) or not paid (paid=false) in the payday plan. A bill marked paid is excluded from that month's plan.",
+    input_schema: {
+      type: "object",
+      properties: {
+        bill_name: { type: "string", description: "Name of the bill." },
+        paid: { type: "boolean", description: "true to mark paid, false to un-mark." },
+        month: { type: "string", description: "Optional month as YYYY-MM. Defaults to the plan's current month." },
+      },
+      required: ["bill_name", "paid"],
+    },
+  },
+  {
+    name: "set_bank_balance",
+    description: "Set the user's current bank/checking balance to a specific dollar amount. Use only when the user explicitly tells you their balance or asks to set it. (If a bank is connected via Plaid, mention it normally syncs automatically.)",
+    input_schema: {
+      type: "object",
+      properties: { amount: { type: "number", description: "New bank balance in dollars." } },
+      required: ["amount"],
+    },
+  },
+  {
+    name: "fund_goal",
+    description: "Add money to (or remove from, with a negative amount) a savings goal or the emergency fund — updates the saved amount.",
+    input_schema: {
+      type: "object",
+      properties: {
+        goal_name: { type: "string", description: "Goal name, or 'emergency' / 'emergency fund' for the emergency fund." },
+        amount: { type: "number", description: "Dollars to add (use a negative number to remove)." },
+      },
+      required: ["goal_name", "amount"],
+    },
+  },
+];
 
 function sendJSON(res, status, obj) {
   res.statusCode = status;
@@ -184,17 +261,26 @@ module.exports = async function handler(req, res) {
   // fresh each turn client-side, so identical rebuilds hit the cache and a real
   // data change (a re-sync) misses once and re-caches. Conversation history +
   // the new question are the small, uncached suffix.
+  // On a tool-loop follow-up the client sends the FULL evolving messages array
+  // (incl. structured tool_use / tool_result blocks) and no new question — we
+  // forward it as-is. On a normal turn we build text history + the new question.
+  const isFollowup = !!(body && body.toolFollowup);
+
   const messages = [];
   history.slice(-MAX_MESSAGES).forEach(m => {
-    const role = m && m.role === "assistant" ? "assistant" : "user";
-    const content = String((m && m.content) || "").slice(0, 8000);
+    if (!m) return;
+    const role = m.role === "assistant" ? "assistant" : "user";
+    if (Array.isArray(m.content)) { messages.push({ role, content: m.content }); return; } // tool blocks pass through
+    const content = String(m.content || "").slice(0, 8000);
     if (content) messages.push({ role, content });
   });
 
   const snapshotJSON = JSON.stringify(snapshot).slice(0, 90000);
-  const turn = userText
-    || "Analyze my budget and credit picture. Give me a clear read on where I stand and the most important moves to make right now.";
-  messages.push({ role: "user", content: turn });
+  if (!isFollowup) {
+    const turn = userText
+      || "Analyze my budget and credit picture. Give me a clear read on where I stand and the most important moves to make right now.";
+    messages.push({ role: "user", content: turn });
+  }
 
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -209,6 +295,7 @@ module.exports = async function handler(req, res) {
         max_tokens: MAX_TOKENS,
         thinking: { type: "adaptive" },
         output_config: { effort: EFFORT },
+        tools: TOOLS,
         // Two cache breakpoints (prompt caching is GA on Opus 4.8 — no beta
         // header). The frozen prompt is < the 4096-token cache minimum so it
         // won't cache standalone, but prompt + snapshot clears it and caches —
@@ -245,7 +332,14 @@ module.exports = async function handler(req, res) {
       ? data.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim()
       : "";
 
-    return sendJSON(res, 200, { reply: reply || "I couldn't generate a response — try rephrasing." });
+    // Return the raw content blocks + stop_reason too, so the client can detect
+    // tool_use, run the action locally, and continue the loop. `reply` stays for
+    // the simple text path (and older callers).
+    return sendJSON(res, 200, {
+      reply: reply,
+      content: Array.isArray(data.content) ? data.content : [],
+      stop_reason: data.stop_reason || null,
+    });
   } catch (e) {
     console.error("Advisor handler error", e && e.message);
     return sendJSON(res, 502, { error: "Couldn't reach the advisor. Please try again." });
