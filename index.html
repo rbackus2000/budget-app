@@ -1398,6 +1398,7 @@
     <div class="card-header">
       <div class="card-title"><span>AI Money Coach</span></div>
       <div class="bills-actions">
+        <button class="btn-add-item" id="coachCheckInBtn" title="Run a progress check-in now">📋 Check-in now</button>
         <button class="btn-add-item" id="coachHistoryBtn">🗂 History</button>
         <button class="btn-add-item" id="coachNewBtn">✎ New chat</button>
         <button class="btn-add-item" id="payoffPlanBtn"><span>📋</span> Full plan</button>
@@ -4626,6 +4627,33 @@ async function maybeWeeklyCheckIn() {
   } catch (e) { /* silent — retry on next open */ }
 }
 
+// Manual trigger (Check-in now button): force a fresh review, bypassing the
+// 7-day throttle, with a visible loading state.
+let checkInBusy = false;
+async function runCheckInNow() {
+  if (checkInBusy) return;
+  if (!currentUser) { toast("Sign in to use the coach."); return; }
+  checkInBusy = true;
+  showView("coach");
+  const host = document.getElementById("coachCheckIn");
+  if (host) { clear(host); host.appendChild(el("div", { class: "checkin-card", text: "📋 Reviewing your progress…" })); }
+  const prevLast = state.lastCoachCheckIn;
+  state.lastCoachCheckIn = ""; // bypass throttle
+  try {
+    await maybeWeeklyCheckIn();
+  } finally {
+    checkInBusy = false;
+    if (state.weeklyCheckIn) {
+      // They're watching it generate — no need to badge it unread.
+      state.weeklyCheckInUnread = false; save(); updateCoachBadge(); renderCoachCheckIn();
+    } else {
+      state.lastCoachCheckIn = prevLast; // restore so it retries on next open
+      if (host) renderCoachCheckIn();
+      toast("Couldn't generate a check-in — try again in a moment.");
+    }
+  }
+}
+
 // Fire-and-forget on app open: sync first (fresh data), then weekly review.
 async function runOpenAutomations() {
   try { await maybeAutoSync(); } catch (e) {}
@@ -5912,6 +5940,7 @@ function init() {
   document.getElementById("advisorSend").addEventListener("click", sendAdvisorInput);
   document.getElementById("advisorInput").addEventListener("keydown", e => { if (e.key === "Enter") sendAdvisorInput(); });
   document.getElementById("coachNewBtn").addEventListener("click", coachNewChat);
+  document.getElementById("coachCheckInBtn").addEventListener("click", runCheckInNow);
   document.getElementById("coachHistoryBtn").addEventListener("click", toggleCoachHistory);
 
   // Auth wiring
