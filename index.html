@@ -1889,7 +1889,7 @@ function newGoal() {
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
   return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, bufferMonths: 1, creditScore: "", creditReport: { markdown: "", date: "" },
-  lastAutoSync: "", lastCoachCheckIn: "", weeklyCheckIn: null, weeklyCheckInUnread: false };
+  lastAutoSync: "", lastCoachCheckIn: "", weeklyCheckIn: null, weeklyCheckInUnread: false, weeklyCheckInDismissed: false };
 }
 
 // Backfill fields added across versions so older / partial data keeps working.
@@ -1931,6 +1931,7 @@ function normalizeState() {
   if (typeof state.lastCoachCheckIn !== "string") state.lastCoachCheckIn = "";
   if (state.weeklyCheckIn && typeof state.weeklyCheckIn !== "object") state.weeklyCheckIn = null;
   state.weeklyCheckInUnread = !!state.weeklyCheckInUnread;
+  state.weeklyCheckInDismissed = !!state.weeklyCheckInDismissed;
   if (typeof state.creditScore !== "string") state.creditScore = state.creditScore == null ? "" : String(state.creditScore);
   if (!state.creditReport || typeof state.creditReport !== "object") state.creditReport = { markdown: "", date: "" };
   if (state.theme !== "light" && state.theme !== "dark") state.theme = "dark";
@@ -4103,6 +4104,12 @@ function coachNewChat() {
   advisorHistory.length = 0;
   const body = document.getElementById("advisorBody");
   if (body) { clear(body); body.appendChild(coachEmptyNode()); }
+  // True clean slate: also clear the pinned weekly check-in card.
+  state.weeklyCheckInUnread = false;
+  state.weeklyCheckInDismissed = true;
+  save();
+  updateCoachBadge();
+  renderCoachCheckIn();
   hideCoachHistory();
 }
 
@@ -4693,6 +4700,7 @@ async function maybeWeeklyCheckIn() {
     if (!reply) return;
     state.weeklyCheckIn = { date: new Date().toISOString(), text: reply };
     state.weeklyCheckInUnread = true;
+    state.weeklyCheckInDismissed = false;
     state.lastCoachCheckIn = new Date().toISOString();
     save();
     updateCoachBadge();
@@ -4746,14 +4754,14 @@ function renderCoachCheckIn() {
   if (!host) return;
   clear(host);
   const ci = state.weeklyCheckIn;
-  if (!ci || !ci.text) return;
+  if (!ci || !ci.text || state.weeklyCheckInDismissed) return;
   let when = "";
   try { const d = new Date(ci.date); if (!isNaN(d)) when = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }); } catch (e) {}
   const card = el("div", { class: "checkin-card" + (state.weeklyCheckInUnread ? " unread" : "") });
   card.appendChild(el("div", { class: "checkin-head" }, [
     el("span", { class: "checkin-title", text: "📋 Weekly check-in" }),
     el("span", { class: "checkin-date", text: when }),
-    el("button", { class: "checkin-x", title: "Dismiss", text: "✕", on: { click: () => { state.weeklyCheckInUnread = false; save(); updateCoachBadge(); renderCoachCheckIn(); } } }),
+    el("button", { class: "checkin-x", title: "Dismiss", text: "✕", on: { click: () => { state.weeklyCheckInUnread = false; state.weeklyCheckInDismissed = true; save(); updateCoachBadge(); renderCoachCheckIn(); } } }),
   ]));
   card.appendChild(el("div", { class: "checkin-body" }, [ mdToDom(ci.text) ]));
   host.appendChild(card);
