@@ -695,6 +695,23 @@
   .payday-row.pd-carry { color: var(--text-dim); font-size: .82rem; }
   .payday-row.pd-avail { color: var(--text); font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
   .payday-row.pd-avail span:last-child { font-variant-numeric: tabular-nums; }
+  /* Received paycheck: subtle green edge so a landed check reads at a glance */
+  .payday-block.is-received { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
+  .payday-block.is-received .payday-head { background: color-mix(in srgb, var(--green) 12%, var(--surface-2)); }
+  .pd-received-tag { margin-left: 8px; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--green); }
+  .pd-received-btn { margin-left: 8px; font-size: .72rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); }
+  .pd-received-btn:hover { border-color: var(--green); color: var(--text); }
+  .pd-received-btn.on { background: color-mix(in srgb, var(--green) 18%, var(--surface)); border-color: var(--green); color: var(--green); }
+  /* Pending bank-charge flag on an unpaid bill */
+  .pd-pending { margin-left: 8px; font-size: .68rem; font-weight: 600; color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border)); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+  /* Auto-match-from-bank control */
+  .payday-automatch { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .automatch-btn { font-size: .8rem; font-weight: 600; padding: 7px 13px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+  .automatch-btn:hover { border-color: var(--accent); }
+  .automatch-note { font-size: .78rem; color: var(--text-dim); }
   .payday-start {
     display: flex; justify-content: space-between; align-items: baseline;
     padding: 10px 16px; margin-bottom: 14px;
@@ -715,6 +732,31 @@
   .surplus-head.neg { color: var(--red); }
   .surplus-step { border-top: 1px dashed var(--border); font-variant-numeric: tabular-nums; }
   .surplus-step span:last-child { font-weight: 700; color: var(--text); }
+
+  /* Received income (deposits pulled from the bank), grouped by week */
+  .recv-empty { font-size: .85rem; color: var(--text-dim); padding: 10px 2px; line-height: 1.5; }
+  .recv-week { margin-top: 12px; }
+  .recv-week-head { display: flex; justify-content: space-between; align-items: baseline;
+    font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+  .recv-week-total { color: var(--text-dim); font-weight: 600; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+  .recv-row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); margin-bottom: 6px; }
+  .recv-row.is-internal { opacity: .6; }
+  .recv-left { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .recv-name { font-size: .9rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+  .recv-meta { font-size: .72rem; color: var(--text-dim); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .recv-tag { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+  .recv-tag.pay { color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 45%, var(--border)); }
+  .recv-tag.misc { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .recv-tag.internal { color: var(--text-dim); border: 1px solid var(--border); }
+  .recv-amt { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--green); flex: none; }
+  .recv-amt.dim { color: var(--text-dim); }
+  .recv-summary { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+  .recv-sum-row { display: flex; justify-content: space-between; gap: 10px; font-size: .85rem; color: var(--text-dim); padding: 3px 0; }
+  .recv-sum-row span:last-child { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+  .recv-sum-row.big { font-size: .98rem; font-weight: 700; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 4px; }
+  .recv-sum-row.big .recv-sum-amt { color: var(--green); }
+  .recv-sum-row.note { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 8px; }
 
   /* Bank transaction feed */
   .txn-head { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 6px; }
@@ -1610,6 +1652,15 @@
     </div>
   </section>
 
+  <!-- RECEIVED FROM BANK — real deposits pulled via Plaid, grouped by week -->
+  <section class="card view" data-view="income">
+    <div class="card-header">
+      <div class="card-title"><span>Received This Month</span></div>
+    </div>
+    <div class="hint" style="margin-top:4px">Every deposit (money in with a “+”) your bank reported, pulled via Plaid. Paychecks are matched to your schedule so you can verify they landed; everything else (a spouse's check, a reimbursement, a refund) shows as <b>Misc received</b>. Totalled by week.</div>
+    <div id="receivedIncome"></div>
+  </section>
+
   <!-- ACCOUNT BALANCE -->
   <section class="card view" data-view="income">
     <h2>Account Balance</h2>
@@ -1981,7 +2032,7 @@ function newGoal() {
 
 /* --------------------------- PERSISTENCE -------------------------- */
 function defaultState() {
-  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, bufferMonths: 1, creditScore: "", creditReport: { markdown: "", date: "" },
+  return { earners: defaultEarners(), commission: "", commissionByMonth: {}, excludedChecks: {}, receivedChecks: {}, bank: "", planId: PLANS[0].id, viewMonth: "", bills: [], payoffMethod: "avalanche", reportLeadDays: 2, planStart: "", goals: [], emergencySaved: "", emergencyMonths: 3, emergencyDate: "", commissionFunPct: 10, goalsSlicePct: 20, bufferMonths: 1, creditScore: "", creditReport: { markdown: "", date: "" },
   lastAutoSync: "", lastCoachCheckIn: "", weeklyCheckIn: null, weeklyCheckInUnread: false, weeklyCheckInDismissed: false };
 }
 
@@ -2002,6 +2053,7 @@ function normalizeState() {
   if (!PLANS.some(p => p.id === state.planId)) state.planId = PLANS[0].id;
   if (!state.viewMonth) state.viewMonth = currentMonthStr();
   if (!state.excludedChecks || typeof state.excludedChecks !== "object") state.excludedChecks = {};
+  if (!state.receivedChecks || typeof state.receivedChecks !== "object") state.receivedChecks = {};
   if (!state.commissionByMonth || typeof state.commissionByMonth !== "object") state.commissionByMonth = {};
   // Migrate the legacy single commission value onto the current month once.
   // Commission is now entered per month and never carries forward.
@@ -2415,6 +2467,13 @@ function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padSta
 // reflected in the starting balance) is left out of income and the plan.
 function checkKey(date, label) { return ymd(date) + "|" + (label || ""); }
 function isCheckExcluded(date, label) { return !!(state.excludedChecks && state.excludedChecks[checkKey(date, label)]); }
+// A paycheck the user has marked "received" (money's already in the bank).
+// Past-dated checks count as received automatically — they've already landed
+// and are reflected in the current bank balance, so the plan must not re-add
+// them (double-count) but must still show their week so bills stay tickable.
+function isCheckReceived(date, label) {
+  return date < todayMidnight() || !!(state.receivedChecks && state.receivedChecks[checkKey(date, label)]);
+}
 // Commission is entered per calendar month and never carries to other months.
 function commissionForMonth(key) { return num(state.commissionByMonth && state.commissionByMonth[key]); }
 function currentCommission() { const { y, m } = viewYM(); return commissionForMonth(ymKey(new Date(y, m, 1))); }
@@ -2823,16 +2882,27 @@ function buildPaydayPlan() {
   const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
   const horizonEnd = PLAN_HORIZON_END();
 
-  const checks = buildPaychecksInRange(start, horizonEnd);
+  // Count paychecks from the START OF THE MONTH (not just today) so every week
+  // of the current month stays visible in the plan — a payday that's already
+  // passed keeps its own window so its bills stay tickable and you can still
+  // reconcile what came out of that check.
+  const checks = buildPaychecksInRange(monthStart, horizonEnd);
   if (!checks.length) return null;
 
   // Same-day checks (incl. commission) pool into one payday window. Track the
-  // commission portion separately so windfalls can use a different split.
+  // commission portion separately so windfalls can use a different split, and
+  // the "received" portion so already-landed pay isn't re-added to the balance.
   const windows = [];
   checks.forEach(c => {
+    const rec = isCheckReceived(c.date, c.label);
     const last = windows[windows.length - 1];
-    if (last && last.date.getTime() === c.date.getTime()) { last.amount += c.amount; last.sources.push(c.label); if (c.isCommission) last.commissionAmount += c.amount; }
-    else windows.push({ date: c.date, amount: c.amount, sources: [c.label], bills: [], extras: [], commissionAmount: c.isCommission ? c.amount : 0 });
+    if (last && last.date.getTime() === c.date.getTime()) {
+      last.amount += c.amount; last.sources.push(c.label);
+      if (c.isCommission) last.commissionAmount += c.amount;
+      if (rec) last.receivedAmount += c.amount;
+    } else {
+      windows.push({ date: c.date, amount: c.amount, sources: [c.label], bills: [], extras: [], commissionAmount: c.isCommission ? c.amount : 0, receivedAmount: rec ? c.amount : 0 });
+    }
   });
 
   // Each bill recurs monthly (biweekly = twice) on its due day, from the start
@@ -2853,11 +2923,11 @@ function buildPaydayPlan() {
       days.forEach(d => {
         const date = new Date(yy, mm, d);
         if (date > horizonEnd) return;
-        // Skip bills already due before the plan start (today, or the go-live
-        // date). They're in the past — already paid or already reflected in the
-        // bank balance — so re-planning them piled the whole current month onto
-        // the first check, double/triple-listing bills also due next month.
-        if (date < start) return;
+        // Only skip bills from before the plan's month window. Bills already due
+        // earlier THIS month stay in their own week (not piled onto check 1) so
+        // you can see and tick what came out of each check — mark it paid and it
+        // stops drawing the running balance.
+        if (date < monthStart) return;
         const dk = ymd(date);
         events.push({ bill: b, day: d, date: date, monthKey: mk, dateKey: dk, paid: paid, deferCount: (b.defer && b.defer[dk]) || 0 });
       });
@@ -2910,10 +2980,25 @@ function buildPaydayPlan() {
     });
     w.minTotal = w.bills.reduce((s, x) => s + ((x.paid || x.paidOff) ? 0 : x.amount), 0); // paid/paid-off don't draw
 
+    // A received check's money is already in the bank balance, so only the
+    // not-yet-received portion posts to the running balance (no double-count).
+    w.received = num(w.receivedAmount) >= w.amount - 0.005;
+    w.postedIncome = Math.max(0, w.amount - num(w.receivedAmount));
+
     w.startBalance = runBal;
-    runBal += w.amount;        // paycheck posts to the bank
+    runBal += w.postedIncome;  // only pay that hasn't landed yet posts to the bank
     runBal -= w.minTotal;      // this window's UNPAID bills clear
     w.shortfall = runBal < 0 ? -runBal : 0;
+
+    // A received check's money is already deployed — its savings/debt/goals/fun
+    // split already happened in real life, so don't project it forward again
+    // (that would double-count debt paydown and goal funding). Show the week for
+    // bill reconciliation only, with a zeroed allocation guide.
+    if (w.received) {
+      w.savingsEarmark = 0; w.funEarmark = 0; w.extras = [];
+      w.extraTotal = 0; w.goalLeftover = 0; w.endBalance = runBal;
+      return;
+    }
 
     // Regular pay splits by the plan %s; the commission (a windfall) skips the
     // needs cut and leans to save (debt then goals) with a smaller fun reward.
@@ -2958,6 +3043,61 @@ function buildPaydayPlan() {
   }
 
   return { windows, totalExtra, totalGoalLeftover, boost };
+}
+
+// Match one bill occurrence against the synced bank feed (Plaid). Returns the
+// best cleared (posted) and best pending outflow near its due date whose amount
+// lines up — used to auto-tick bills that already came out and to flag ones
+// that are on the way. Outflows only (Plaid: amount > 0 = money OUT).
+function billTxnMatches(bill, occDate) {
+  const pay = num(bill.payment);
+  const txns = state.plaidRecent || [];
+  if (pay <= 0 || !txns.length || !occDate) return { posted: null, pending: null };
+  const tol = Math.max(2, pay * 0.04);           // utilities/variable bills wiggle a bit
+  const today = todayMidnight();
+  const lo = addDays(occDate, -7), hi = addDays(occDate, 7);
+  let bestPosted = null, bestPending = null, bpScore = Infinity, bnScore = Infinity;
+  txns.forEach(t => {
+    const amt = Number(t.amount) || 0;           // + = money OUT
+    if (amt <= 0) return;                         // outflows only
+    if (Math.abs(amt - pay) > tol) return;
+    const d = parseDate(t.date);
+    if (!d || d < lo || d > hi || d > addDays(today, 1)) return;
+    const score = Math.abs(amt - pay) + Math.abs(d - occDate) / DAY_MS * 0.5;
+    if (t.pending) { if (score < bnScore) { bnScore = score; bestPending = t; } }
+    else if (score < bpScore) { bpScore = score; bestPosted = t; }
+  });
+  return { posted: bestPosted, pending: bestPending };
+}
+
+// The pending bank charge to flag on an unpaid bill row (none if it already
+// posted — a cleared charge is handled by auto-match, not shown as pending).
+function pendingMatchFor(bill, occDate) {
+  const m = billTxnMatches(bill, occDate);
+  return m.posted ? null : m.pending;
+}
+
+// Tick every unpaid bill that has a matching CLEARED transaction in the bank
+// feed. Pending matches are counted but left unticked (amounts can still move).
+// A single transaction is only claimed by one bill.
+function autoMatchPaidBills() {
+  const plan = buildPaydayPlan();
+  if (!plan) return { posted: 0, pending: 0 };
+  const used = new Set();
+  let posted = 0, pending = 0;
+  plan.windows.forEach(w => w.bills.forEach(x => {
+    if (x.paid || x.paidOff) return;
+    const m = billTxnMatches(x.bill, x.date);
+    if (m.posted && !used.has(m.posted)) {
+      used.add(m.posted);
+      const b = x.bill; if (!b.paid || typeof b.paid !== "object") b.paid = {};
+      b.paid[x.monthKey] = true;
+      posted++;
+    } else if (m.pending) {
+      pending++;
+    }
+  }));
+  return { posted, pending };
 }
 
 // billId → planned payments [{ date, amount, kind: "min"|"extra", early }]
@@ -3047,7 +3187,7 @@ function renderSchedule() {
       const include = el("input", {
         class: "check-include",
         props: { type: "checkbox", checked: !c.excluded },
-        attrs: { title: "Uncheck to leave this paycheck out of the totals and payday plan" },
+        attrs: { title: "Counts this paycheck in your totals and plan. Uncheck only to leave a check out entirely — to mark one as already received, use “Mark received” in the Payday Plan instead." },
         on: { change: ev => {
           const k = checkKey(c.date, c.label);
           if (ev.target.checked) delete state.excludedChecks[k];
@@ -3083,6 +3223,8 @@ function renderSchedule() {
       el("td", { class: "num", text: fmt(total * pct.savings / 100) }),
     ]));
   }
+
+  renderReceivedIncome(); // real deposits for the same viewed month
 }
 
 function renderPlans() {
@@ -3634,7 +3776,10 @@ function renderThisWeek() {
   const plan = buildPaydayPlan();
   if (!plan || !plan.windows.length || !state.bills.length) { card.style.display = "none"; return; }
   const today = todayMidnight();
-  const w = plan.windows.find(x => x.date >= today) || plan.windows[0];
+  // The check you're currently living on: the most recent payday on/before
+  // today (so a just-passed payday stays in focus), else the next one.
+  const w = [...plan.windows].reverse().find(x => x.date <= today)
+    || plan.windows.find(x => x.date >= today) || plan.windows[0];
   card.style.display = "";
 
   host.appendChild(el("div", { class: "tw-head" }, [
@@ -3749,32 +3894,76 @@ function renderPaydayPlan() {
     el("span", { text: "Starting bank balance" }),
     el("span", { class: "ps-amt", text: fmt(num(state.bank)) }),
   ]));
-  const planFrom = state.planStart ? dateShort(effectivePlanStart()).replace(/^\w+, /, "") : "today (" + dateShort(todayMidnight()).replace(/^\w+, /, "") + ")";
+  const monthFrom = effectivePlanStart();
+  const monthLabel = new Date(monthFrom.getFullYear(), monthFrom.getMonth(), 1).toLocaleDateString("en-US", { month: "long" });
   wrap.appendChild(el("div", { class: "payday-rolling-note", text:
-    "Counting paychecks from " + planFrom + " through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". Tick a bill once you've paid it, or push it (→) to a later week." }));
+    "Showing every week from the start of " + monthLabel + " through " + dateShort(PLAN_HORIZON_END()).replace(/^\w+, /, "") + ". A paycheck that's already landed shows a ✓ received tag and stays open so you can still tick off its bills. Tick a bill once you've paid it, or push it (→) to a later week." }));
 
+  // Auto-match paid bills against real bank transactions (Plaid). Posted
+  // (cleared) outflows that line up with a bill's amount and due date get
+  // ticked automatically; pending ones are only flagged (shown ⏳ on the row)
+  // until they post, since pending amounts can still change.
+  if ((state.plaidRecent || []).length) {
+    const matchRow = el("div", { class: "payday-automatch" });
+    matchRow.appendChild(el("button", { class: "automatch-btn", text: "↻ Auto-match paid bills from bank", title: "Scan your synced bank transactions and tick bills that already cleared", on: { click: () => {
+      const r = autoMatchPaidBills();
+      save(); renderPaydayPlan(); renderHome();
+      const note = document.getElementById("automatchNote");
+      if (note) note.textContent = r.posted
+        ? "✓ Matched " + r.posted + (r.posted === 1 ? " bill" : " bills") + " to cleared transactions" + (r.pending ? " · " + r.pending + " pending (⏳ shown below — confirm once they post)" : "") + "."
+        : (r.pending ? r.pending + " possible match" + (r.pending === 1 ? "" : "es") + " still pending (⏳ shown below) — nothing cleared yet." : "No new matches in your bank feed yet.");
+    } } }));
+    matchRow.appendChild(el("span", { id: "automatchNote", class: "automatch-note" }));
+    wrap.appendChild(matchRow);
+  }
+
+  const today = todayMidnight();
   let lastMonthShown = "";
   plan.windows.forEach((w, wi) => {
     // Month divider so the rolling, cross-month plan stays readable.
     const mLabel = w.date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
     if (mLabel !== lastMonthShown) { lastMonthShown = mLabel; wrap.appendChild(el("div", { class: "payday-month", text: mLabel })); }
 
-    const block = el("div", { class: "payday-block" });
-    block.appendChild(el("div", { class: "payday-head" }, [
+    const block = el("div", { class: "payday-block" + (w.received ? " is-received" : "") });
+    const head = el("div", { class: "payday-head" }, [
       el("span", { class: "pd-date", text: dateShort(w.date) }),
       el("span", { class: "pd-src", text: w.sources.join(" + ") }),
       el("span", { class: "pd-amt", text: "+ " + fmt(w.amount) }),
-    ]));
+    ]);
+    // A past-dated check is received automatically (it's already in the bank).
+    // A check dated today or later gets a non-destructive "Mark received"
+    // toggle — flipping it keeps the week and its bills, it just stops the plan
+    // from adding that pay again (it's already in your balance).
+    const autoReceived = w.date < today;
+    if (autoReceived) {
+      head.appendChild(el("span", { class: "pd-received-tag", text: "✓ received" }));
+    } else {
+      head.appendChild(el("button", {
+        class: "pd-received-btn" + (w.received ? " on" : ""),
+        text: w.received ? "✓ Received" : "Mark received",
+        title: w.received ? "Marked as landed — click to undo" : "Mark this paycheck as received (money's in your bank). Its week stays open so you can tick off bills.",
+        on: { click: () => {
+          const nowRecv = !w.received;
+          w.sources.forEach(lbl => {
+            const k = checkKey(w.date, lbl);
+            if (nowRecv) state.receivedChecks[k] = true; else delete state.receivedChecks[k];
+          });
+          save(); renderPaydayPlan(); renderHome();
+        } },
+      }));
+    }
+    block.appendChild(head);
 
     // Show the balance carried in from the previous check (first window starts
-    // from the bank balance shown above), then this check adds to it.
+    // from the bank balance shown above), then this check adds to it. A received
+    // check adds nothing here — it's already counted in the starting balance.
     block.appendChild(el("div", { class: "payday-row pd-carry" }, [
       el("span", { text: wi === 0 ? "Balance going in (from bank)" : "Carried over from last check" }),
       el("span", { text: fmt(w.startBalance) }),
     ]));
     block.appendChild(el("div", { class: "payday-row pd-avail" }, [
-      el("span", { text: "Available this check (carried + paycheck)" }),
-      el("span", { text: fmt(w.startBalance + w.amount) }),
+      el("span", { text: w.received ? "Available this check (already in your balance)" : "Available this check (carried + paycheck)" }),
+      el("span", { text: fmt(w.startBalance + w.postedIncome) }),
     ]));
 
     if (!w.bills.length) {
@@ -3820,12 +4009,18 @@ function renderPaydayPlan() {
           save(); renderPaydayPlan(); renderHome();
         } } }));
       }
+      const billLeft = el("div", { class: "pd-bill-left" }, [
+        cb,
+        el("span", { text: x.bill.name || "Untitled" }),
+        el("span", { class: "pd-due", text: due }),
+      ]);
+      // A pending (not-yet-cleared) bank charge that matches this bill: flag it
+      // so you know it's on the way, but don't auto-tick — pending amounts can
+      // still change. Tick it yourself, or wait for auto-match once it posts.
+      const pend = !x.paid ? pendingMatchFor(x.bill, x.date) : null;
+      if (pend) billLeft.appendChild(el("span", { class: "pd-pending", title: "Pending in your bank: " + (pend.name || "charge") + " " + fmt(Math.abs(Number(pend.amount) || 0)) + " on " + (parseDate(pend.date) ? parseDate(pend.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : pend.date), text: "⏳ pending" }));
       block.appendChild(el("div", { class: "payday-row pd-bill" + (x.paid ? " is-paid" : "") + (x.deferred ? " is-deferred" : "") }, [
-        el("div", { class: "pd-bill-left" }, [
-          cb,
-          el("span", { text: x.bill.name || "Untitled" }),
-          el("span", { class: "pd-due", text: due }),
-        ]),
+        billLeft,
         right,
       ]));
     });
@@ -5263,6 +5458,7 @@ function plaidRefreshUI() {
   if (connect) { connect.style.display = admin ? "" : "none"; connect.textContent = connected ? "🔗 Connect another bank" : "🔗 Connect bank"; }
   plaidRenderSpending();
   plaidRenderTxns();
+  renderReceivedIncome();
 }
 
 // Unlink the bank at Plaid + remove auto-imported cards, so the user can
@@ -5329,6 +5525,139 @@ function plaidRenderTxns() {
 function prettyCat(code) {
   return String(code || "").toLowerCase().replace(/_/g, " ").replace(/\band\b/g, "&")
     .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/* ------------------ RECEIVED INCOME (from the bank feed) ------------------ *
+ *  Surfaces real deposits (money IN, Plaid amount < 0) on the Income page so   *
+ *  scheduled paychecks can be verified against the bank and every other        *
+ *  deposit (spouse's check, reimbursement, refund) is counted as "misc         *
+ *  received", totalled by week.                                                *
+ * -------------------------------------------------------------------------- */
+
+// An internal move between the user's OWN accounts (e.g. checking→savings) is
+// not new income — count it out of the received total but still list it so the
+// feed stays honest. Plaid flags these as TRANSFER_IN + an account-transfer
+// detail.
+function inflowIsInternalTransfer(t) {
+  const d = String(t.detail || "").toUpperCase();
+  return d.indexOf("ACCOUNT_TRANSFER") >= 0 || d.indexOf("INTERNAL") >= 0;
+}
+
+// Match a deposit to a scheduled paycheck: an earner whose biweekly amount lines
+// up (within tolerance) and whose 14-day payday cadence lands near the deposit's
+// date. Returns the earner, or null (→ treated as misc received).
+function matchInflowToPaycheck(t) {
+  const amtIn = -(Number(t.amount) || 0);   // money in is negative in Plaid
+  if (amtIn <= 0) return null;
+  const d = parseDate(t.date);
+  if (!d) return null;
+  for (const e of state.earners) {
+    const pay = num(e.amount);
+    if (pay <= 0 || !e.firstPay) continue;
+    if (Math.abs(amtIn - pay) > Math.max(5, pay * 0.05)) continue;   // deposits post at the exact net; small wiggle
+    const first = parseDate(e.firstPay);
+    if (!first) continue;
+    const steps = Math.round((d - first) / (DAY_MS * 14));
+    const nearestPay = addDays(first, steps * 14);
+    if (Math.abs(d - nearestPay) <= 4 * DAY_MS) return e;
+  }
+  return null;
+}
+
+// Start-of-week (Sunday) for grouping deposits into weekly buckets.
+function weekStartOf(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - x.getDay());
+  return x;
+}
+
+function renderReceivedIncome() {
+  const host = document.getElementById("receivedIncome");
+  if (!host) return;
+  clear(host);
+
+  if (!state.plaidSyncedAt) {
+    host.appendChild(el("div", { class: "recv-empty", text: "Connect your bank (below) to verify deposits and track everything you actually received." }));
+    return;
+  }
+
+  const { y, m } = viewYM();
+  const monthKey = ymKey(new Date(y, m, 1));
+  // Deposits = inflows (Plaid amount < 0) dated within the viewed month.
+  const inflows = (state.plaidRecent || []).filter(t => (Number(t.amount) || 0) < 0 && String(t.date || "").slice(0, 7) === monthKey);
+
+  if (!inflows.length) {
+    host.appendChild(el("div", { class: "recv-empty", text: "No deposits pulled for this month yet. Deposits (checks, reimbursements, direct deposit) can take a day or two to post at your bank and appear here — tap “Sync now” after they land." }));
+    return;
+  }
+
+  // Bucket by week; within a week split paycheck-verified vs misc, and flag
+  // internal transfers (listed but not counted as income).
+  const weeks = {};
+  inflows.forEach(t => {
+    const d = parseDate(t.date); if (!d) return;
+    const wk = ymd(weekStartOf(d));
+    (weeks[wk] = weeks[wk] || { start: weekStartOf(d), rows: [] }).rows.push(t);
+  });
+
+  let monthTotal = 0, monthMisc = 0, monthPay = 0;
+  const weekKeys = Object.keys(weeks).sort();
+  weekKeys.forEach(wk => {
+    const w = weeks[wk];
+    const block = el("div", { class: "recv-week" });
+    const weekLbl = "Week of " + w.start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const totalCell = el("span", { class: "recv-week-total" });
+    block.appendChild(el("div", { class: "recv-week-head" }, [ el("span", { text: weekLbl }), totalCell ]));
+
+    let weekTotal = 0;
+    w.rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    w.rows.forEach(t => {
+      const amtIn = -(Number(t.amount) || 0);
+      const internal = inflowIsInternalTransfer(t);
+      const earner = internal ? null : matchInflowToPaycheck(t);
+      if (!internal) { weekTotal += amtIn; monthTotal += amtIn; if (earner) monthPay += amtIn; else monthMisc += amtIn; }
+      const when = (function () { const d = parseDate(t.date); return d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : (t.date || ""); })();
+      const tag = internal
+        ? el("span", { class: "recv-tag internal", text: "internal transfer — not income" })
+        : earner
+          ? el("span", { class: "recv-tag pay", text: "✓ Paycheck — " + (earner.label || "verified") + (t.pending ? " (pending)" : "") })
+          : el("span", { class: "recv-tag misc", text: "Misc received" + (t.pending ? " · pending" : "") });
+      block.appendChild(el("div", { class: "recv-row" + (internal ? " is-internal" : "") }, [
+        el("div", { class: "recv-left" }, [
+          el("span", { class: "recv-name", text: t.name || "Deposit" }),
+          el("div", { class: "recv-meta" }, [ document.createTextNode(when + (t.account ? " · " + t.account : "")), tag ]),
+        ]),
+        el("span", { class: "recv-amt" + (internal ? " dim" : ""), text: "+" + fmt(amtIn) }),
+      ]));
+    });
+    totalCell.textContent = "Received: " + fmt(weekTotal);
+    host.appendChild(block);
+  });
+
+  // Month roll-up: what actually landed vs what the plan expected this month,
+  // with the paycheck-vs-misc split the user asked for.
+  const projected = totalIncome();
+  const summary = el("div", { class: "recv-summary" });
+  summary.appendChild(el("div", { class: "recv-sum-row big" }, [
+    el("span", { text: "Total received this month (from bank)" }),
+    el("span", { class: "recv-sum-amt", text: fmt(monthTotal) }),
+  ]));
+  summary.appendChild(el("div", { class: "recv-sum-row" }, [
+    el("span", { text: "Paychecks verified in bank" }),
+    el("span", { text: fmt(monthPay) }),
+  ]));
+  summary.appendChild(el("div", { class: "recv-sum-row" }, [
+    el("span", { text: "Misc received (spouse's check, reimbursements, refunds)" }),
+    el("span", { text: fmt(monthMisc) }),
+  ]));
+  if (projected > 0) {
+    const diff = monthTotal - projected;
+    summary.appendChild(el("div", { class: "recv-sum-row note" }, [
+      el("span", { text: "Planned income this month" }),
+      el("span", { text: fmt(projected) + (Math.abs(diff) >= 1 ? "  (" + (diff >= 0 ? "+" : "−") + fmt(Math.abs(diff)) + " vs received)" : "") }),
+    ]));
+  }
+  host.appendChild(summary);
 }
 
 // Show the classified bank feed: income (jobs) vs recurring bills (AT&T) vs
