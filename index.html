@@ -1069,6 +1069,12 @@
   .fs-iconsq { width:34px; height:34px; border-radius:10px; border:1px solid var(--fs-card-border); background:var(--fs-row); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
   .fs-statamt { margin-top:7px; font:700 24px var(--fs-mono); color:var(--fs-bright); letter-spacing:-0.5px; }
   .fs-bigamt { font:700 29px var(--fs-mono); color:var(--fs-bright); letter-spacing:-1px; }
+  .fs-recv { margin-top:14px; padding-top:12px; border-top:1px solid var(--fs-row, var(--border)); }
+  .fs-recv-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .fs-recv-lbl { font-size:12px; color:var(--fs-dim); }
+  .fs-recv-val { font:700 14px var(--fs-mono); color:var(--green); }
+  .fs-recv-of { font-weight:400; color:var(--fs-dim); }
+  .fs-recv-sub { margin-top:4px; font-size:11.5px; color:var(--fs-dim); }
   .fs-num { font-family:var(--fs-mono); color:var(--fs-bright); }
   .fs-badge { display:inline-flex; align-items:center; gap:3px; font:600 11px var(--fs-mono); }
   .fs-badge.up { color:var(--fs-pos); } .fs-badge.down { color:var(--fs-neg); }
@@ -5571,6 +5577,23 @@ function weekStartOf(d) {
   return x;
 }
 
+// Totals of real deposits pulled from the bank for one month (YYYY-MM):
+// paychecks (matched to the schedule) vs misc (everything else), excluding
+// internal account transfers. Single source of truth for both the Income page
+// panel and the Home cockpit. Returns null when no bank is connected.
+function receivedIncomeSummary(monthKey) {
+  if (!state.plaidSyncedAt) return null;
+  const inflows = (state.plaidRecent || []).filter(t => (Number(t.amount) || 0) < 0 && String(t.date || "").slice(0, 7) === monthKey);
+  let total = 0, paychecks = 0, misc = 0, count = 0;
+  inflows.forEach(t => {
+    if (inflowIsInternalTransfer(t)) return;
+    const amtIn = -(Number(t.amount) || 0);
+    total += amtIn; count++;
+    if (matchInflowToPaycheck(t)) paychecks += amtIn; else misc += amtIn;
+  });
+  return { total: total, paychecks: paychecks, misc: misc, count: count };
+}
+
 function renderReceivedIncome() {
   const host = document.getElementById("receivedIncome");
   if (!host) return;
@@ -6325,11 +6348,29 @@ function renderHome() {
   renderAna("expenses");
 
   const expand = () => el("span", { class: "fs-expand" }, [svgIcon(ICON_EXPAND, 17)]);
-  const incCard = el("div", { class: "fs-card", style: { padding: "22px 24px", cursor: "pointer" }, on: { click: () => showView("income") } }, [
+  const incChildren = [
     el("div", { class: "fs-chead" }, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Income" }), expand()]),
     el("div", { class: "fs-badge", style: { marginTop: "24px", fontSize: "12px", color: "var(--fs-dim)" } }, [el("span", { class: "fs-mono", text: "This month" })]),
     el("div", { class: "fs-bigamt", style: { marginTop: "10px" } }, [fsMoney(income, { spaced: true })]),
-  ]);
+  ];
+  // When a bank is connected, show what actually landed this month vs planned —
+  // paychecks verified in the bank + misc received (from renderReceivedIncome's
+  // shared summary). Keeps the cockpit in sync with the Income page.
+  const rcvMonthKey = (function () { const q = viewYM(); return ymKey(new Date(q.y, q.m, 1)); })();
+  const rcv = receivedIncomeSummary(rcvMonthKey);
+  if (rcv && rcv.count) {
+    incChildren.push(el("div", { class: "fs-recv" }, [
+      el("div", { class: "fs-recv-top" }, [
+        el("span", { class: "fs-recv-lbl", text: "Received (bank)" }),
+        el("span", { class: "fs-recv-val" }, [
+          document.createTextNode(fmt(rcv.total)),
+          el("span", { class: "fs-recv-of", text: income > 0 ? " of " + fmt(income) + " planned" : "" }),
+        ]),
+      ]),
+      el("div", { class: "fs-recv-sub", text: "✓ " + fmt(rcv.paychecks) + " paychecks · " + fmt(rcv.misc) + " misc" }),
+    ]));
+  }
+  const incCard = el("div", { class: "fs-card", style: { padding: "22px 24px", cursor: "pointer" }, on: { click: () => showView("income") } }, incChildren);
   const pctInc = income > 0 ? Math.round(monthly / income * 100) : 0;
   const expCard = el("div", { class: "fs-card", style: { padding: "22px 24px", cursor: "pointer" }, on: { click: () => showView("bills") } }, [
     el("div", { class: "fs-chead" }, [el("h3", { class: "fs-ctitle", style: { fontSize: "18px" }, text: "Expenses" }), expand()]),
